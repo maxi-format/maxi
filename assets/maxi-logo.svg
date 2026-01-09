@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 70" width="90" height="70">
+  <defs>
+    <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="white" flood-opacity="0.9"/>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="90" height="70" rx="8" fill="#ffffff"/>
+  
+  <g transform="translate(10, 10)">
+    <rect x="0" y="0" width="70" height="10" rx="2" fill="#ffb3ba"/>
+    <rect x="0" y="0" width="10" height="10" rx="2" fill="#ee4035"/>
+    <rect x="60" y="0" width="10" height="10" rx="2" fill="#ee4035"/>
+    
+    <rect x="0" y="14" width="70" height="10" rx="2" fill="#ffd2b3"/>
+    <rect x="0" y="14" width="10" height="10" rx="2" fill="#f37736"/>
+    <rect x="60" y="14" width="10" height="10" rx="2" fill="#f37736"/>
+    
+    <rect x="0" y="28" width="70" height="10" rx="2" fill="#baffb3"/>
+    <rect x="0" y="28" width="10" height="10" rx="2" fill="#7bc043"/>
+    <rect x="60" y="28" width="10" height="10" rx="2" fill="#7bc043"/>    
+
+    <rect x="0" y="42" width="70" height="10" rx="2" fill="#bae1ff"/>
+    <rect x="0" y="42" width="10" height="10" rx="2" fill="#0392cf"/>
+    <rect x="60" y="42" width="10" height="10" rx="2" fill="#0392cf"/>
+  </g>
+  
+  <text x="27" y="32" font-family="JetBrains Mono, Monaco, monospace" font-size="32" font-weight="800" fill="#0f172a" filter="url(#textShadow)">
+    MA
+  </text>
+  <text x="27" y="60" font-family="JetBrains Mono, Monaco, monospace" font-size="32" font-weight="800" fill="#0f172a" filter="url(#textShadow)">
+    XI
+  </text>
+</svg>

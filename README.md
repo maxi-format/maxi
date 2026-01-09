@@ -22,7 +22,7 @@ Key ideas:
 
 - **Positional fields**: field order is defined by the schema; field names are not repeated in data records
 - **Short aliases**: types use short aliases in data (e.g., `U` for `User`)
-- **Optional schema**: works with or without an external schema
+- **Optional schema**: schema can be inline or external, but can also be omitted entirely when it’s clear from context which schema/types apply (e.g., by API endpoint/contract/version)
 - **References & inheritance**: reuse types and avoid duplication
 - **Streaming-friendly**: schema first, then record stream
 
@@ -64,7 +64,7 @@ The full specification is in [`SPEC.md`](./SPEC.md):
 - Error handling & error codes
 - Streaming behavior
 
-For implementers: `SPEC.md` also includes **Appendix C (ABNF schema grammar)** to help build parsers and serializers consistently.
+For implementers: `SPEC.md` also includes **Appendix C (ABNF schema grammar)** and **Appendix D (ABNF data grammar)** to help build parsers and serializers consistently (including schema-less/data-only files where the applicable schema is implied by context).
 
 ---
 

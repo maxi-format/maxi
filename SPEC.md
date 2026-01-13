@@ -1185,15 +1185,15 @@ You can mix references and inline definitions in the same dataset:
 
 ```maxi
 U:User(id:int|name|email)
-A:Address(street|city|zip)
+A:Address(id:int|street|city|zip)
 O:Order(id:int|user:U|shipTo:A|total:decimal)
 ###
 U(1|Julie|julie@maxi.org)
 A(1|123 Main St|NYC|10001)
 O(100|1|1|99.99)                                         # References both User and Address
 O(101|(2|Matt|matt@maxi.org)|1|149.50)                   # Inline User, reference Address
-O(102|1|(456 Oak Ave|LA|90001)|199.99)                   # Reference User, inline Address
-O(103|(3|Anna|anna@maxi.org)|(789 Elm|SF|94102)|249.99)  # Both inline
+O(102|1|(2|456 Oak Ave|LA|90001)|199.99)                   # Reference User, inline Address
+O(103|(3|Anna|anna@maxi.org)|(3|789 Elm|SF|94102)|249.99)  # Both inline
 ```
 
 ### 5.3.4 Nested Inline Objects

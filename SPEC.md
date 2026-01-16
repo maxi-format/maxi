@@ -154,7 +154,7 @@ MAXI is built on the following core principles:
 ### 1.3 Quick Example
 
 ```maxi
-U:User(id|name(!))
+U:User(id:int|name(!))
 O:Order(id:int|user:U|total:decimal)
 ###
 U(1|Julie Miller)

@@ -198,7 +198,7 @@ U(2|Matt|matt@maxi.org)
 
 **Inline Schema:**
 ```maxi
-U:User(id|name|email)
+U:User(id:int|name|email)
 ###
 U(1|Julie|julie@maxi.org)
 U(2|Matt|matt@maxi.org)
@@ -243,7 +243,7 @@ Specifies the MAXI version used in the file.
 **Example:**
 ```maxi
 @version:1.0.0
-U:User(id|name|email)
+U:User(id:int|name|email)
 ###
 U(1|Julie|julie@maxi.org)
 ```
@@ -269,7 +269,7 @@ Specifies the parsing mode for the MAXI file.
 **Example:**
 ```maxi
 @mode:strict
-U:User(id|name|age:int)
+U:User(id:int|name|age:int)
 ###
 U(1|Anna|24)
 ```

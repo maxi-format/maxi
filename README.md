@@ -93,7 +93,7 @@ This specification is the foundation for a broader MAXI ecosystem.
 
 Planned companion projects:
 
-- **Test data & conformance repository**  
+- **Test data & conformance repository** [maxi-testdata](https://github.com/maxi-format/maxi-testdata)  
   A separate repository containing:
   - Canonical example `.maxi` and `.mxs` files
   - Edge cases and malformed inputs

@@ -2193,10 +2193,19 @@ quoted-string   = DQUOTE *string-content DQUOTE
 
 string-content  = unescaped / escape-seq
 
-unescaped       = %x20-21 / %x23-5B / %x5D-7E / %x80-10FFFF
-                ; Any char except DQUOTE (") and backslash (\)
+unescaped       = %x20-21          ; SP and !
+                / %x23-5B          ; # through [
+                / %x5D-7E          ; ] through ~
+                / %x80-10FFFF      ; UTF-8 extended
+                ; Excludes: DQUOTE (") and backslash (\)
 
-escape-seq      = "\" ( DQUOTE / "\" / "n" / "r" / "t" )
+escape-seq      = "\" escape-char
+
+escape-char     = DQUOTE           ; \"
+                / "\"              ; \\
+                / "n"              ; \n (newline)
+                / "r"              ; \r (carriage return)
+                / "t"              ; \t (tab)
 
 DQUOTE          = %x22
 

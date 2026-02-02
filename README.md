@@ -104,7 +104,7 @@ Planned companion projects:
 - **Language libraries**  
   Libraries for working with MAXI in various languages (for example):
   - Python
-  - JavaScript/TypeScript
+  - [JavaScript - maxi-javascript](https://github.com/maxi-format/maxi-javascript)
   - ...
   
   These libraries will cover parsing, validation, schema handling, and serialization.

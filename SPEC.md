@@ -1985,7 +1985,7 @@ E020 - SchemaLoadError
 
 ## Appendix C: ABNF (Schema Grammar)
 
-This appendix provides an **ABNF** (RFC 5234) grammar for the **schema portion** of MAXI (`.mxs` files and the schema section of `.maxi` files before `###`).  
+This appendix provides an **ABNF** (RFC 5234) grammar for the **schema portion** of MAXI (`.mxs` files and the schema section of `.maxi` files before `###`).
 It is intended to make parser implementations easier and more consistent.
 
 **Scope (syntax only):**
@@ -2003,20 +2003,35 @@ It is intended to make parser implementations easier and more consistent.
 ; MAXI Schema ABNF (RFC 5234) - Syntax Grammar
 ; ============================================================================
 ; Scope: Schema section of .maxi files and .mxs schema files (not data)
-; Note: Semantic validation (type compatibility, constraint validity) is 
+; Note: Semantic validation (type compatibility, constraint validity) is
 ;       specified in the normative text, not in this syntax grammar.
 ; ============================================================================
+
+; ----------------------------------------------------------------------------
+; Top-level: full .maxi file (schema section + separator + data section)
+; For .mxs schema-only files, use schema-file directly.
+; ----------------------------------------------------------------------------
+
+maxi-file       = schema-file schema-sep data-section
+                / data-section
+                ; A .maxi file is either schema+data, or data-only (no ###)
 
 schema-file     = *schema-element
 
 schema-element  = directive / type-def / comment / blank-line
 
-; Schema/data separator (only appears in .maxi files, not .mxs)
+; Schema/data separator (only in .maxi files, not .mxs)
 schema-sep      = "###" line-end
 
 ; ============================================================================
 ; Directives
 ; ============================================================================
+; Must appear before type definitions and data records.
+; Examples:
+;   @version:1.0.0
+;   @mode:strict
+;   @schema:users.mxs
+;   @schema:https://example.com/schema.mxs
 
 directive       = "@" directive-name ":" directive-value line-end
 
@@ -2025,79 +2040,120 @@ directive-name  = "version" / "mode" / "schema"
 directive-value = 1*vchar-printable
                 ; version: semver (e.g., "1.0.0")
                 ; mode: "strict" / "lax"
-                ; schema: file path or URL
+                ; schema: relative file path or absolute URL
 
 ; ============================================================================
-; Comments and Whitespace
+; Comments and Blank Lines
 ; ============================================================================
+; Comments are only valid in schema sections (.mxs files and before ###).
 
-comment         = "#" *vchar-printable line-end
+comment         = *WSP "#" *vchar-printable line-end
 
 blank-line      = *WSP line-end
 
 ; ============================================================================
 ; Type Definitions
 ; ============================================================================
-; Examples:
-;   U:User(id:int|name(!)|email:str@email)
-;   U(id|name|email)
-;   U:User<Person,Timestamped>(role=admin)
+; Syntax variants:
+;   U:User(id:int|name(!)|email:str@email)    full form
+;   U(id|name|email)                           alias-only
+;   U:User<Person,Timestamped>(role=admin)     with inheritance
+;   U:User(                                    multi-line
+;     id:int|
+;     name
+;   )
+;
+; Whitespace (including newlines) is allowed inside the parentheses.
+; SWS = structural whitespace (SP / HTAB / CR / LF).
 
-type-def        = *WSP alias 
-                  [ ":" type-name ] 
-                  [ inheritance ] 
-                  *WSP "(" *WSP field-list *WSP ")" *WSP 
+type-def        = *WSP alias
+                  [ ":" type-name ]
+                  [ inheritance ]
+                  *WSP "(" *SWS field-list *SWS ")" *WSP
                   line-end
 
+; Inheritance: <Parent1,Parent2>
 inheritance     = "<" *WSP type-ref *( *WSP "," *WSP type-ref ) *WSP ">"
 
-field-list      = [ field *( *WSP "|" *WSP field ) ]
+; Field list: pipe-separated, newlines allowed around pipes
+field-list      = [ field *( *SWS "|" *SWS field ) ]
 
-field           = field-name  [ ":" type-expr [ type-annotation ] ]
-                  [ constraints ] [ default-clause ]
+; A field: name, optional type+annotation, optional constraints, optional default
+; Array fields place their own constraints AFTER the []:
+;   scores:int(>=0,<=100)[](=3)
+;   tags:str[](>=1,<=5)
+field           = field-name
+                  [ ":" type-expr [ type-annotation ] ]
+                  [ field-constraints ]
+                  [ default-clause ]
+
+; field-constraints differs from plain constraints:
+; For array fields, constraints may appear both on the element type (inside
+; element-type) and on the array itself (after []).  The outer constraints
+; here apply to the whole field (array size, or non-array value range).
+field-constraints = constraints
 
 ; ============================================================================
 ; Type Expressions
 ; ============================================================================
 
-type-expr       = primitive-type 
-                / array-type 
-                / enum-type 
-                / map-type 
+type-expr       = array-type
+                / enum-type
+                / map-type
+                / primitive-type
                 / type-ref
+                ; array-type is tried first to correctly parse "int[]"
+                ; before "int" matches as primitive-type
 
 primitive-type  = "int" / "decimal" / "float" / "str" / "bool" / "bytes"
 
-array-type      = element-type "[]"
+; Array type: element-type with optional element constraints, then one or more
+; [] pairs, with optional array-level constraints after the last [].
+; Examples:
+;   int[]
+;   str(>=3,<=20)[]
+;   int(>=0,<=100)[](=3)
+;   int[][]              (array of int arrays)
+array-type      = element-type 1*( "[]" ) [ constraints ]
 
-element-type    = primitive-type [ constraints ] 
+element-type    = primitive-type [ constraints ]
                 / type-ref [ constraints ]
 
-enum-type       = "enum" [ "<" enum-base ">" ] "[" enum-values "]"
+; Enum type: enum[val1,val2] or enum<int>[0,1,2]
+enum-type       = "enum" [ "<" enum-base ">" ] "[" *WSP enum-values *WSP "]"
 
 enum-base       = "str" / "int"
 
-enum-values     = *WSP enum-value *( *WSP "," *WSP enum-value ) *WSP
+enum-values     = enum-value *( *WSP "," *WSP enum-value )
 
-enum-value      = identifier / integer / quoted-string
+enum-value      = quoted-string / integer / identifier
+                ; quoted-string first to handle values with special chars
 
+; Map type: map, map<valueType>, map<keyType,valueType>
+; Key types are restricted to int or str (semantic rule, not syntax).
+; Examples:
+;   map                        shorthand for map<str,str>
+;   map<int>                   shorthand for map<str,int>
+;   map<str,str>
+;   map<str(>=1,<=50),int(>=0)>
 map-type        = "map" [ "<" map-params ">" ]
 
-map-params      = map-value-type 
-                / ( map-key-type "," map-value-type )
+map-params      = map-key-type "," map-value-type
+                / map-value-type
+                ; Two-arg form tried first
 
-map-key-type    = primitive-type [ constraints ] 
-                / type-ref
+map-key-type    = primitive-type [ constraints ]
 
-map-value-type  = primitive-type [ constraints ] 
-                / type-ref
+map-value-type  = primitive-type [ constraints ]
+                / type-ref [ constraints ]
 
 type-ref        = identifier
 
 ; ============================================================================
 ; Type Annotations
 ; ============================================================================
-; Examples: @email, @url, @datetime, @base64, @hex, @timestamp
+; Applied directly after the type with @, e.g.: str@email, int@timestamp
+; Valid combinations are defined in section 3.4 (semantic rule).
 
 type-annotation = "@" annotation-name
 
@@ -2108,48 +2164,53 @@ annotation-name = "email" / "url" / "uuid" / "date" / "datetime" / "time"
 ; Constraints
 ; ============================================================================
 ; Syntax: (constraint1,constraint2,...)
-; Semantic validation depends on field type (specified in main spec)
+; Which constraint forms are valid for which type is a semantic rule
+; (see sections 4.1 – 4.5), not enforced by this grammar.
 
-constraints     = "(" *WSP constraint-expr 
+constraints     = "(" *WSP constraint-expr
                   *( *WSP "," *WSP constraint-expr ) *WSP ")"
 
-constraint-expr = required-marker
-                / comparison-constraint
-                / pattern-constraint
-                / mime-constraint
-                / decimal-precision
-                / identifier-marker
-                / exact-length
+constraint-expr = required-marker        ; !
+                / identifier-marker      ; id
+                / comparison-constraint  ; >=N, >N, <=N, <N, =N
+                / pattern-constraint     ; pattern:<regex>
+                / mime-constraint        ; mime:<type>
+                / decimal-precision      ; N.X, M:N.X:Y, etc.
 
-; Individual constraint patterns
+; --- General constraints ---
 
 required-marker    = "!"
 
 identifier-marker  = "id"
 
+; --- Comparison constraints (int, float, decimal, bytes length, array/map size) ---
+
 comparison-constraint = comparison-op number
 
 comparison-op      = ">=" / ">" / "<=" / "<" / "="
 
-number             = integer / decimal-number
+number             = decimal-number / integer
+                   ; decimal-number tried first to avoid "1.5" matching integer "1"
 
 integer            = [ "-" ] 1*DIGIT
 
 decimal-number     = [ "-" ] 1*DIGIT "." 1*DIGIT
 
-; Pattern constraint for strings
-; Example: pattern:^[a-z0-9]+$
+; --- Pattern constraint (str fields only) ---
+; Example: pattern:^[a-zA-Z0-9_]+$
 pattern-constraint = "pattern:" pattern-value
 
 pattern-value      = 1*pattern-char
 
-pattern-char       = %x21-2B / %x2D-7E  ; Printable except comma
+pattern-char       = %x21-2B / %x2D-7E
+                   ; Printable ASCII except comma (%x2C)
 
-; MIME constraint for bytes
-; Examples: mime:image/png, mime:[image/png,image/jpg], mime:image/*
+; --- MIME constraint (bytes fields only) ---
+; Examples: mime:image/png  mime:[image/png,image/jpg]  mime:image/*
 mime-constraint    = "mime:" mime-spec
 
-mime-spec          = mime-single / mime-list
+mime-spec          = mime-list / mime-single
+                   ; mime-list tried first
 
 mime-single        = mime-type
 
@@ -2159,9 +2220,15 @@ mime-type          = 1*mime-char [ "/" 1*mime-char ]
 
 mime-char          = ALPHA / DIGIT / "-" / "+" / "." / "*"
 
-; Decimal precision constraint
-; Examples: 5.2, 0:10.2, .2:4, 1:999., 0:100.0:2
-decimal-precision  = precision-only / scale-only / precision-and-scale
+; --- Decimal precision/scale constraint (decimal fields only) ---
+; Full syntax and semantics described in section 4.3.2.
+; Examples:
+;   5.2          max 5 digits before decimal, exactly 2 after
+;   0:10.2       0 to 10 digits before, exactly 2 after
+;   .2:4         2 to 4 digits after decimal, no integer constraint
+;   1:999.       1 to 999 digits before decimal, no scale constraint
+;   0:100.0:2    0 to 100 digits before, 0 to 2 digits after
+decimal-precision  = precision-and-scale / precision-only / scale-only
 
 precision-only     = [ min-digits ":" ] max-digits "."
 
@@ -2173,48 +2240,53 @@ min-digits         = 1*DIGIT
 
 max-digits         = 1*DIGIT
 
-scale-spec         = exact-scale / min-max-scale
+scale-spec         = min-max-scale / exact-scale
+                   ; min-max-scale tried first (e.g. "0:2" vs "2")
 
 exact-scale        = 1*DIGIT
 
 min-max-scale      = 1*DIGIT ":" 1*DIGIT
 
-exact-length       = "=" 1*DIGIT
-
 ; ============================================================================
 ; Default Values
 ; ============================================================================
-; Examples: =guest, =0, ="default value", =true
+; Examples: =guest  =0  =1.5  ="hello world"  =true  =false
+; Defaults must be compatible with the field type (semantic rule, section 5.2.1).
 
 default-clause  = "=" default-value
 
-default-value   = unquoted-default / quoted-string / boolean-literal
+default-value   = quoted-string / decimal-number / integer / unquoted-default
+                ; quoted-string and numbers tried before generic unquoted-default
 
-unquoted-default = 1*unquoted-char
+unquoted-default = 1*unquoted-default-char
 
-unquoted-char    = ALPHA / DIGIT / "-" / "_" / "."
-                 ; Simple unquoted defaults (no spaces, no special chars)
-
-boolean-literal  = "true" / "false" / "0" / "1"
+unquoted-default-char = ALPHA / DIGIT / "-" / "_" / "."
+                      ; Covers identifiers, enum values, simple numbers
+                      ; Excludes whitespace and MAXI delimiters
 
 ; ============================================================================
 ; Identifiers and Names
 ; ============================================================================
+; Aliases: may start with letter or underscore (section 3.3.3)
+; Type names: must start with a letter (section 3.3.2)
 
-alias           = identifier
+alias           = alias-start *ident-char
 
-type-name       = identifier
+alias-start     = ALPHA / "_"
 
-field-name      = identifier
+type-name       = ALPHA *ident-char
+                ; Type names must start with a letter, not underscore
 
-identifier      = ident-start *ident-char
+field-name      = alias
+                ; Field names follow alias rules (start with letter or _)
 
-ident-start     = ALPHA / "_"
+identifier      = alias
+                ; General identifier used for type-ref etc.
 
 ident-char      = ALPHA / DIGIT / "_" / "-"
 
 ; ============================================================================
-; Quoted Strings (for defaults and enum values)
+; Quoted Strings (defaults and enum values in schema)
 ; ============================================================================
 ; Supports escape sequences: \", \\, \n, \r, \t
 
@@ -2223,18 +2295,17 @@ quoted-string   = DQUOTE *string-content DQUOTE
 string-content  = unescaped / escape-seq
 
 unescaped       = %x20-21          ; SP and !
-                / %x23-5B          ; # through [
-                / %x5D-7E          ; ] through ~
-                / %x80-10FFFF      ; UTF-8 extended
-                ; Excludes: DQUOTE (") and backslash (\)
+                / %x23-5B          ; # through [ (excludes DQUOTE %x22)
+                / %x5D-7E          ; ] through ~ (excludes backslash %x5C)
+                / %x80-10FFFF      ; UTF-8 multibyte
 
 escape-seq      = "\" escape-char
 
-escape-char     = DQUOTE           ; \"
-                / "\"              ; \\
-                / "n"              ; \n (newline)
-                / "r"              ; \r (carriage return)
-                / "t"              ; \t (tab)
+escape-char     = DQUOTE           ; \" → "
+                / "\"              ; \\ → \
+                / "n"              ; \n → newline
+                / "r"              ; \r → carriage return
+                / "t"              ; \t → tab
 
 DQUOTE          = %x22
 
@@ -2243,11 +2314,17 @@ DQUOTE          = %x22
 ; ============================================================================
 
 line-end        = [ CR ] LF
+                ; Supports both LF (Unix) and CRLF (Windows)
 
-vchar-printable = %x20-7E / %x80-10FFFF
-                ; Printable characters including UTF-8
+vchar-printable = %x21-7E / %x80-10FFFF
+                ; Visible characters + UTF-8 (excludes SP %x20)
 
 WSP             = SP / HTAB
+                ; Horizontal whitespace only (used for inline spacing)
+
+SWS             = *( SP / HTAB / CR / LF )
+                ; Structural whitespace: used inside () and [] where
+                ; newlines are permitted (multi-line type definitions)
 
 SP              = %x20
 
@@ -2282,9 +2359,9 @@ It complements Appendix C (Schema Grammar) and is intended to make parser implem
 ; ============================================================================
 ; MAXI Data ABNF (RFC 5234) - Syntax Grammar
 ; ============================================================================
-; Scope: Data section of .maxi files (after ###) and data-only files
-; Note: Semantic validation (schema matching, reference resolution) is
-;       specified in the normative text, not in this syntax grammar.
+; Scope: Data section of .maxi files (after ###) and data-only files.
+; Note: Semantic validation (schema matching, reference resolution, type
+;       checking) is specified in the normative text, not this grammar.
 ; ============================================================================
 
 data-section    = *data-element
@@ -2294,28 +2371,38 @@ data-element    = data-record / blank-line
 ; ============================================================================
 ; Data Records
 ; ============================================================================
+; A record is: TypeAlias( field | field | ... )
+; Multi-line: whitespace including newlines is allowed inside parentheses.
+; The OWS rule (optional whitespace with newlines) handles this.
+;
 ; Examples:
 ;   U(1|Julie|julie@maxi.org)
 ;   O(100|1|99.99)
-;   U(1|Julie|(123 Main St|NYC|10001))
+;   U(
+;     1|
+;     Julie Miller|
+;     julie@maxi.org
+;   )
 
-data-record     = *WSP type-alias *WSP "(" *WSP field-values *WSP ")" *WSP line-end
+data-record     = *WSP type-alias *WSP "(" *OWS field-values *OWS ")" *WSP line-end
 
 type-alias      = identifier
 
-field-values    = [ field-value *( *WSP "|" *WSP field-value ) ]
+field-values    = [ field-value *( *OWS "|" *OWS field-value ) ]
 
 ; ============================================================================
 ; Field Values
 ; ============================================================================
 ; A field value can be:
-;   - Empty (null or default)
-;   - Explicit null (~)
-;   - Primitive value (string, number, boolean)
-;   - Array
-;   - Map
-;   - Object reference (identifier/number)
-;   - Inline object
+;   - Empty string (null or triggers default): ||
+;   - Explicit null: |~|
+;   - Primitive value: number, boolean, unquoted/quoted string
+;   - Array value: [...]
+;   - Map value: {...}
+;   - Inline object: (...)
+;
+; Note: object references are syntactically identical to primitive values
+; (an integer or unquoted string); the parser resolves them via schema context.
 
 field-value     = explicit-null
                 / array-value
@@ -2325,76 +2412,103 @@ field-value     = explicit-null
                 / empty-value
 
 empty-value     = ""
+                ; Matches nothing — empty slot between pipes (e.g. ||)
 
 explicit-null   = "~"
 
 ; ============================================================================
 ; Primitive Values
 ; ============================================================================
+; Ordered so more-specific patterns are tried before less-specific ones.
+; boolean-value is before numeric so "1"/"0" are not swallowed by integer-value.
+; float-value is before decimal-value so scientific notation is matched first.
+; decimal-value is before integer-value so "3.14" is not truncated to "3".
 
 primitive-value = quoted-string
                 / boolean-value
+                / float-value
                 / decimal-value
                 / integer-value
                 / unquoted-string
 
 boolean-value   = "true" / "false" / "1" / "0"
+                ; "1" and "0" are valid bool literals per section 3.1.
+                ; Must appear before integer-value to prevent ambiguity.
 
-integer-value   = [ "-" ] 1*DIGIT
+; float-value covers scientific notation used by float fields (section 3.1).
+; Examples: 1.0e10  -2.5E-3  6.022e23
+float-value     = [ "-" ] ( 1*DIGIT "." 1*DIGIT / 1*DIGIT ) exponent
 
+exponent        = ( "e" / "E" ) [ "+" / "-" ] 1*DIGIT
+
+; decimal-value covers fixed-point numbers used by decimal and float fields.
+; Examples: 3.14  -0.5  100.00  -90.0
 decimal-value   = [ "-" ] 1*DIGIT "." 1*DIGIT
 
-; Unquoted strings: any sequence of characters not containing special delimiters
-; Leading/trailing whitespace is stripped
+; integer-value covers whole numbers used by int fields and object references.
+; Examples: 42  -17  0  100
+integer-value   = [ "-" ] 1*DIGIT
+
+; Unquoted strings: any sequence not containing MAXI delimiter characters.
+; Leading/trailing horizontal whitespace is stripped by the parser.
+; Use quoted-string when the value contains |  ,  (  )  [  ]  {  }  ~  or whitespace.
 unquoted-string = 1*unquoted-char
 
-unquoted-char   = %x21-27          ; ! " # $ % & '
+unquoted-char   = %x21-21          ; !
+                / %x23-26          ; # $ % &     (excludes " %x22)
                 / %x2A-2B          ; * +
-                / %x2D-3B          ; - . / 0-9 : ;
+                / %x2D-2F          ; - . /
+                / %x30-3B          ; 0-9 : ;
                 / %x3D             ; =
                 / %x3F-5A          ; ? @ A-Z
                 / %x5E-7A          ; ^ _ ` a-z
-                / %x80-10FFFF      ; UTF-8 extended
-                ; Excludes: ( ) [ ] { } | , ~ < > SP HTAB
+                / %x7C             ; |  — NOTE: excluded from field value context
+                / %x80-10FFFF      ; UTF-8 multibyte
+                ; Explicitly excluded: SP %x20, HTAB %x09, ( %x28, ) %x29,
+                ;   [ %x5B, ] %x5D, { %x7B, } %x7D, , %x2C, ~ %x7E, < %x3C, > %x3E
+                ; Note: %x7C (|) is listed for completeness but is the field
+                ; separator and MUST be excluded in any field-value context.
 
 ; ============================================================================
 ; Quoted Strings
 ; ============================================================================
-; Used when values contain special characters, whitespace, or escape sequences
-; Supports: \", \\, \n, \r, \t
+; Used when values contain special characters, whitespace, or escape sequences.
+; Supports: \"  \\  \n  \r  \t  (section 2.5.1)
 
 quoted-string   = DQUOTE *string-content DQUOTE
 
 string-content  = unescaped / escape-seq
 
 unescaped       = %x20-21          ; SP and !
-                / %x23-5B          ; # through [
-                / %x5D-7E          ; ] through ~
-                / %x80-10FFFF      ; UTF-8 extended
-                ; Excludes: DQUOTE (") and backslash (\)
+                / %x23-5B          ; # through [  (excludes DQUOTE %x22)
+                / %x5D-7E          ; ] through ~  (excludes backslash %x5C)
+                / %x80-10FFFF      ; UTF-8 multibyte
 
 escape-seq      = "\" escape-char
 
-escape-char     = DQUOTE           ; \"
-                / "\"              ; \\
-                / "n"              ; \n (newline)
-                / "r"              ; \r (carriage return)
-                / "t"              ; \t (tab)
+escape-char     = DQUOTE           ; \" → "
+                / "\"              ; \\ → \
+                / "n"              ; \n → newline
+                / "r"              ; \r → carriage return
+                / "t"              ; \t → tab
 
 DQUOTE          = %x22
 
 ; ============================================================================
 ; Arrays
 ; ============================================================================
+; Syntax: [ element, element, ... ]
+; Elements can be any field-value type except empty-value.
 ; Examples:
 ;   [tag1,tag2,tag3]
 ;   [95,87,92]
 ;   []
 ;   [(1|Item1),(2|Item2)]
+;   [[1,2],[3,4]]
 
-array-value     = "[" *WSP [ array-elements ] *WSP "]"
+array-value     = "[" *OWS [ array-elements ] *OWS "]"
 
-array-elements  = array-element *( *WSP "," *WSP array-element )
+array-elements  = array-element *( *OWS "," *OWS array-element )
 
 array-element   = explicit-null
                 / array-value
@@ -2405,26 +2519,32 @@ array-element   = explicit-null
 ; ============================================================================
 ; Maps
 ; ============================================================================
+; Syntax: { key:value, key:value, ... }
+; Map keys must be str or int per section 3.2.3 (semantic rule).
+; Keys with colons or commas must be quoted.
 ; Examples:
 ;   {key1:value1,key2:value2}
 ;   {math:95,science:87}
 ;   {}
 ;   {"key:with:colon":"value,with,comma"}
+;   {1:one,2:two}            int keys
 
-map-value       = "{" *WSP [ map-entries ] *WSP "}"
+map-value       = "{" *OWS [ map-entries ] *OWS "}"
 
-map-entries     = map-entry *( *WSP "," *WSP map-entry )
+map-entries     = map-entry *( *OWS "," *OWS map-entry )
 
 map-entry       = map-key *WSP ":" *WSP map-entry-value
 
 map-key         = quoted-string
                 / integer-value
                 / map-key-unquoted
+                ; quoted-string first (handles keys with colons/commas)
+                ; integer-value before unquoted (handles numeric keys like {1:one})
 
 map-key-unquoted = 1*map-key-char
 
 map-key-char    = ALPHA / DIGIT / "_" / "-" / "."
-                ; Simple unquoted keys (no colons, commas, or braces)
+                ; Simple unquoted keys — must not contain ":" "," "{" "}"
 
 map-entry-value = explicit-null
                 / array-value
@@ -2435,15 +2555,16 @@ map-entry-value = explicit-null
 ; ============================================================================
 ; Inline Objects
 ; ============================================================================
-; Inline object definitions within data records
+; An inline object embeds a full object definition inside a parent record.
+; Structurally identical to a data-record's field list, but without a type alias.
 ; Examples:
 ;   (2|Matt|matt@maxi.org)
 ;   (1|ACME Corp)
-;   (456 Oak Ave|LA|90001)
+;   ((1|ACME)|(2|Julie))     nested inline objects
 
-inline-object   = "(" *WSP inline-fields *WSP ")"
+inline-object   = "(" *OWS inline-fields *OWS ")"
 
-inline-fields   = [ inline-field-value *( *WSP "|" *WSP inline-field-value ) ]
+inline-fields   = [ inline-field-value *( *OWS "|" *OWS inline-field-value ) ]
 
 inline-field-value = explicit-null
                    / array-value
@@ -2455,52 +2576,45 @@ inline-field-value = explicit-null
 ; ============================================================================
 ; Object References
 ; ============================================================================
-; Object references are represented as primitive values (int or str)
-; The parser determines if a value is a reference based on schema context
+; Object references are syntactically identical to primitive values
+; (an integer-value or unquoted-string).  The parser determines whether a
+; value is a reference or a literal based on the field's declared type in
+; the schema (semantic rule, section 5.3.1).
 ; Examples:
-;   1         (integer reference to User id=1)
-;   user_001  (string reference)
-
-; Note: Object references are syntactically identical to primitive values.
-; The distinction is semantic and determined by the field's type in the schema.
+;   1           integer reference to an object with id=1
+;   sku_001     string reference to an object with sku="sku_001"
 
 ; ============================================================================
 ; Identifiers
 ; ============================================================================
+; Used for type aliases in data records.  Same rules as schema aliases
+; (section 3.3.3): start with letter or underscore, then letters/digits/_/-.
 
-identifier      = ident-start *ident-char
-
-ident-start     = ALPHA / "_"
-
-ident-char      = ALPHA / DIGIT / "_" / "-"
-
-; ============================================================================
-; Multi-line Records
-; ============================================================================
-; Records can span multiple lines within the parentheses
-; Whitespace (including newlines) inside parentheses is normalized
-;
-; Example:
-;   U(
-;     1|
-;     Julie Miller|
-;     julie@maxi.org
-;   )
-;
-; Note: The grammar above already handles this via *WSP which includes
-; optional whitespace. Parsers should treat all whitespace between
-; ( and ) as equivalent to field separators.
+identifier      = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" / "-" )
 
 ; ============================================================================
 ; Whitespace and Line Endings
 ; ============================================================================
+;
+; WSP  — horizontal whitespace only (SP / HTAB).
+;        Used outside of multi-line constructs.
+;
+; OWS  — optional whitespace including newlines (SP / HTAB / CR / LF).
+;        Used inside ( ), [ ], { } where multi-line layout is allowed
+;        (data records, arrays, maps, inline objects).
+;
+; line-end — marks the end of a logical line.
 
 blank-line      = *WSP line-end
 
 line-end        = [ CR ] LF
+                ; Supports both LF (Unix) and CRLF (Windows)
 
-WSP             = *( SP / HTAB / CR / LF )
-                ; Within data records, all whitespace is normalized
+WSP             = SP / HTAB
+                ; Horizontal whitespace only
+
+OWS             = *( SP / HTAB / CR / LF )
+                ; Optional whitespace with newlines — used inside delimiters
 
 SP              = %x20
 

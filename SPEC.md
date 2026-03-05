@@ -43,7 +43,8 @@
     - 4.3 [Numeric Constraints](#43-numeric-constraints)
         - 4.3.1 [Integer Constraints](#431-integer-constraints)
         - 4.3.2 [Decimal Constraints](#432-decimal-constraints)
-        - 4.3.3 [Binary Constraints](#433-binary-constraints)
+        - 4.3.3 [Float Constraints](#433-float-constraints)
+        - 4.3.4 [Binary Constraints](#434-binary-constraints)
     - 4.4 [Array Constraints](#44-array-constraints)
     - 4.5 [Map Constraints](#45-map-constraints)
 5. [Data Records](#5-data-records)
@@ -438,6 +439,7 @@ MAXI supports the following primitive types, which are intrinsic to the format a
 |-----------|-----------------------------------------------------|---------------------------|
 | `int`     | Integer numbers                                     | `42`, `-17`, `0`          |
 | `decimal` | Decimal numbers                                     | `3.14`, `-0.5`, `100.00`  |
+| `float`   | 64-bit floating-point numbers (float64)             | `3.14`, `-0.5`, `1.0e10`  |
 | `str`     | UTF-8 strings                                       | `"Hello"`, `World`, `""`  |
 | `bool`    | Boolean values                                      | `true`, `false`, `1`, `0` |
 | `bytes`   | Binary data (base64-encoded by default)             | `SGVsbG8=`                |
@@ -447,6 +449,8 @@ MAXI supports the following primitive types, which are intrinsic to the format a
 **Note:** For `bool` you can either use the literals `true`/`false` (lowercase), or `1`/`0` in data records. `1` and `0` are preferred for token efficiency.
 
 **Note:** For `bytes`, the default encoding format is `@base64`.
+
+**Note:** `float` is always 64-bit (float64/double precision). There is no separate `double` type.
 
 ### 3.2 Complex Types
 
@@ -905,7 +909,31 @@ DE:DecimalExamples(
 )
 ```
 
-#### 4.3.3 Binary Constraints
+#### 4.3.3 Float Constraints
+
+The following constraints apply to `float` fields:
+
+| Constraint | Description                                          |
+|------------|------------------------------------------------------|
+| `>=N`      | Minimum value (N is a number)                        |
+| `>N`       | Greater than N (N is a number)                       |
+| `<=N`      | Maximum value (N is a number)                        |
+| `<N`       | Less than N (N is a number)                          |
+
+**Note:** `float` uses IEEE 754 double-precision (64-bit) representation. Precision and scale constraints (like those for `decimal`) do not apply to `float`. Use `decimal` when exact precision is required (e.g., monetary values).
+
+**Example:**
+
+```maxi
+M:Measurement(
+  id:int|
+  value:float(>=0.0)|      # Non-negative float
+  latitude:float(>=-90.0,<=90.0)|   # Valid latitude range
+  longitude:float(>=-180.0,<=180.0) # Valid longitude range
+)
+```
+
+#### 4.3.4 Binary Constraints
 
 The following constraints apply to `bytes` fields:
 
@@ -1690,7 +1718,8 @@ Parser behavior:
 ### Primitive Types
 ```maxi
 int                      # Integer
-decimal                  # Decimal number
+decimal                  # Decimal number (arbitrary precision)
+float                    # 64-bit floating-point number (float64)
 str                      # String (default if no type)
 bool                     # Boolean (true/false or 1/0)
 bytes                    # Binary data (base64 by default)
@@ -2037,7 +2066,7 @@ type-expr       = primitive-type
                 / map-type 
                 / type-ref
 
-primitive-type  = "int" / "decimal" / "str" / "bool" / "bytes"
+primitive-type  = "int" / "decimal" / "float" / "str" / "bool" / "bytes"
 
 array-type      = element-type "[]"
 

@@ -17,8 +17,7 @@
     - 2.2 [Delimiters](#22-delimiters)
     - 2.3 [Directives](#23-directives)
         - 2.3.1 [Version Directive](#231-version-directive)
-        - 2.3.2 [Mode Directive](#232-mode-directive)
-        - 2.3.3 [Schema Directive](#233-schema-directive)
+        - 2.3.2 [Schema Directive](#232-schema-directive)
     - 2.4 [Comments](#24-comments)
     - 2.5 [String Escaping](#25-string-escaping)
     - 2.6 [File Format and Extensions](#26-file-format-and-extensions)
@@ -77,8 +76,9 @@
         - 7.4.1 [Unknown Type Aliases](#741-unknown-type-aliases)
         - 7.4.2 [Missing Required Fields](#742-missing-required-fields)
         - 7.4.3 [Type Mismatches](#743-type-mismatches)
-        - 7.4.4 [Invalid Constraint Values](#744-invalid-constraint-values)
-        - 7.4.5 [Invalid Enum Values](#745-invalid-enum-values)
+        - 7.4.4 [Constraint Violations](#744-constraint-violations)
+        - 7.4.5 [Invalid Constraint Definitions](#745-invalid-constraint-definitions)
+        - 7.4.6 [Invalid Enum Values](#746-invalid-enum-values)
 8. [Streaming](#8-streaming)
     - 8.1 [Overview](#81-overview)
     - 8.2 [Streaming Requirements](#82-streaming-requirements)
@@ -140,18 +140,6 @@ MAXI is built on the following core principles:
    - Omitted fields use defaults or become `null`
    - Explicit null override: `~`
 
-9. **Strict and lax modes**: Flexible validation for different use cases
-   - **Lax mode** (default): Permissive parsing with warnings
-      - Allows type coercion (e.g., `"25"` → `25` for `int`)
-      - Allows missing fields (filled with `null`)
-      - Allows extra fields (ignored)
-      - Issues warnings for schema deviations
-   - **Strict mode** (`@mode:strict`): Enforces schema compliance
-      - Type mismatches cause errors
-      - Missing required fields cause errors
-      - Extra fields cause errors
-      - Forward references may be rejected (parser-dependent)
-
 ### 1.3 Quick Example
 
 ```maxi
@@ -174,7 +162,6 @@ MAXI files consist of an optional schema section followed by a data section, sep
 
 ```maxi
 [@version:X.Y.Z]
-[@mode:strict]
 [@schema:external.mxs]
 
 [schema definitions]
@@ -249,33 +236,7 @@ U:User(id:int|name|email)
 U(1|Julie|julie@maxi.org)
 ```
 
-#### 2.3.2 Mode Directive
-
-Specifies the parsing mode for the MAXI file.
-
-**Allowed modes:**
-- `strict` - Enforces strict schema adherence.
-- `lax` - Default mode, allows some schema deviations (like type coercion or extra fields) while issuing warnings.
-
-**Lax mode allows:**
-- Missing required fields (set to null if left empty), but a warning should be issued.
-- Extra fields at the end of a record (ignored).
-- Type mismatches, where the parser will attempt to coerce the value (e.g., a field `age:int` receiving a string value `"25"`).
-
-**Syntax:**
-```maxi
-@mode:strict
-```
-
-**Example:**
-```maxi
-@mode:strict
-U:User(id:int|name|age:int)
-###
-U(1|Anna|24)
-```
-
-#### 2.3.3 Schema Directive
+#### 2.3.2 Schema Directive
 
 Imports type definitions from external schema files. Multiple `@schema` directives can be specified, and they are processed in order.
 
@@ -446,7 +407,7 @@ MAXI supports the following primitive types, which are intrinsic to the format a
 
 **Note:** `str` is the default type if no type annotation is provided.
 
-**Note:** For `bool` you can either use the literals `true`/`false` (lowercase), or `1`/`0` in data records. `1` and `0` are preferred for token efficiency.
+**Note:** For `bool`, parsers **MUST** accept `true` and `false` (lowercase) and the integers `1` and `0`. For token efficiency, writers **SHOULD** emit `1` or `0`.
 
 **Note:** For `bytes`, the default encoding format is `@base64`.
 
@@ -1277,7 +1238,7 @@ OI:OrderItem(id:int|order_item_id:int(id)|product_variant:PV|quantity:int) # ord
 
 1. **Immediate Resolution** (preferred): When a reference is encountered (e.g., `O(100|1|99.99)`), the parser looks up the referenced object by ID.
 2. **Forward References**: If the referenced object hasn't been defined yet, parsers **MAY** support forward references by deferring resolution until all records are loaded.
-3. **Strict Mode**: In `@mode:strict`, unresolved references **MUST** trigger an error.
+3. **Unresolved references**: If the referenced object hasn't been found and `allowForwardReferences` is `false`, the parser **MUST** trigger an error.
 
 **Example of Forward Reference:**
 
@@ -1289,7 +1250,7 @@ O(100|1|99.99)           # Forward reference to User id=1
 U(1|Julie|julie@maxi.org)  # User defined after being referenced
 ```
 
-Parsers **SHOULD** support this pattern in lax mode, but **MAY** reject it in strict mode.
+Parsers **SHOULD** support forward references by default (`allowForwardReferences: true`).
 
 ### 5.4 Arrays & Maps
 
@@ -1499,11 +1460,12 @@ Parsers **MUST** reject (fail-fast) in these cases:
 - **Invalid type reference**: A field references a type that doesn't exist in the schema
     - Error: `UnknownTypeError: Type 'NonExistent' referenced in field 'user' but not defined`
 
-- **Malformed records with @mode:strict**: When strict mode is enabled:
-    - Record has wrong number of fields (too many or too few without defaults)
-    - Field value type doesn't match schema type (e.g., string value for int field)
-    - Forward references cannot be resolved
-    - Error: `SchemaValidationError: Record 'U(2)' missing required fields: name, email`
+- **Records violating parser flags configured as `error`**: When a parser flag is set to `"error"`, the corresponding violation **MUST** cause a parse failure.
+    - Too many fields (`allowAdditionalFields: "error"`): `AdditionalFieldsError: Record 'U' has extra fields`
+    - Missing required fields (`allowMissingFields: "error"`): `SchemaValidationError: Record 'U(2)' missing required fields: name, email`
+    - Type mismatch with no coercion (`allowTypeCoercion: "error"`): `TypeMismatchError: Field 'age' expects int, got string`
+    - Unresolved reference (`allowForwardReferences: false`): `UnresolvedReferenceError: No record found for User id=1`
+    - Unknown type alias (`allowUnknownTypes: "error"`): `UnknownTypeError: Type alias 'Xyz' not defined`
 
 - **Circular inheritance**: Type A inherits from B, which inherits from A
     - Error: `CircularInheritanceError: Circular inheritance detected: A -> B -> A`
@@ -1527,9 +1489,7 @@ Parsers **SHOULD** implement these behaviors for better diagnostics:
 - **Warn on unknown directives**: Unknown `@` directives should generate a warning but not fail
     - Warning: `UnknownDirective: Directive '@debug' is not recognized; ignoring`
 
-- **Validate reference targets in non-strict mode**: Even without @mode:strict, warn when:
-    - A referenced ID doesn't exist in the data
-    - Field type doesn't match the referenced type
+- **Validate reference targets**: Warn when a referenced ID doesn't exist in the data or the field type doesn't match the referenced type (unless `allowForwardReferences` is `true` and the reference may still be resolved later)
     - Warning: `UnresolvedReference: Record references user ID '999', but no such user found`
 
 - **Suggest corrections**: When type alias is not found, suggest similar aliases
@@ -1548,10 +1508,8 @@ Parsers **MAY** implement these for enhanced user experience:
 - **Best-effort parsing**: Continue parsing after recoverable errors (missing optional fields, unknown directives)
     - Collect all errors and report at end instead of failing immediately
 
-- **Lax mode helpers**: Provide tooling to assist development/testing
-    - Allow undefined types
-    - Allow extra fields beyond schema
-    - Allow type mismatches with warnings
+- **Parser configuration options**: Expose named options that control permissiveness independently of mode, for example controlling how extra fields or type mismatches are handled
+    - See `IMPLEMENTATION_GUIDE.md` for the recommended option names, values, and behavior
 
 - **Performance warnings**: Warn about performance issues
     - Warning: `PerformanceWarning: Large array with 10000 elements in single record`
@@ -1563,47 +1521,50 @@ Parsers **MAY** implement these for enhanced user experience:
 
 #### 7.4.1 Unknown Type Aliases
 
-**In Strict Mode (@mode:strict):**
-- **MUST** reject record with unknown type alias
-- **SHOULD** provide suggestion if similar alias exists
-- Example: `UnknownTypeError: Type 'Usr' not found. Did you mean 'U'?`
+Controlled by `allowUnknownTypes`.
 
-**In Lax Mode (default):**
-- **MAY** attempt to parse the record anyway
-- **SHOULD** warn about unknown type
-- Example: `Warning: Unknown type 'Usr', attempting best-effort parsing`
+- **`"error"`**: **MUST** reject record; **SHOULD** suggest similar alias.
+    - Error: `UnknownTypeError: Type 'Usr' not found. Did you mean 'U'?`
+- **`"warning"`** (default): **SHOULD** warn, **MAY** attempt best-effort parsing.
+    - Warning: `Warning: Unknown type 'Usr', attempting best-effort parsing`
+- **`"ignore"`**: Silently skip the record.
 
 #### 7.4.2 Missing Required Fields
 
-**In Strict Mode (@mode:strict):**
-- **MUST** reject record
-- Example: `SchemaValidationError: Required field 'email' missing in record`
+Controlled by `allowMissingFields`.
 
-**In Lax Mode (default):**
-- **MAY** use default value if defined
-- **MAY** set field to null if not defined
-- **SHOULD** warn about missing field
-- Example: `Warning: Required field 'email' missing, setting to null`
+- **`"error"`**: **MUST** reject record.
+    - Error: `SchemaValidationError: Required field 'email' missing in record`
+- **`"warning"`**: **SHOULD** warn; fill missing field with default or `null`.
+    - Warning: `Warning: Required field 'email' missing, setting to null`
+- **`"null"`** (default): Silently fill missing field with default or `null`.
 
 #### 7.4.3 Type Mismatches
 
-**In Strict Mode (@mode:strict):**
-- **MUST** reject record if field value doesn't match declared type
-- Example: `TypeMismatchError: Field 'age' expects int, got string 'twenty-five'`
+Controlled by `allowTypeCoercion`.
 
-**In Lax Mode (default):**
-- **MAY** attempt type coercion
-- **SHOULD** warn on coercion
-- Example: `Warning: Coercing string '25' to int for field 'age'`
+- **`"error"`**: **MUST** reject record.
+    - Error: `TypeMismatchError: Field 'age' expects int, got string 'twenty-five'`
+- **`"warning"`**: **SHOULD** warn and attempt coercion.
+    - Warning: `Warning: Coercing string '25' to int for field 'age'`
+- **`"coerce"`** (default): Silently attempt type coercion.
 
-#### 7.4.4 Invalid Constraint Values
+#### 7.4.4 Constraint Violations
+
+Controlled by `allowConstraintViolations`. A constraint violation occurs when a data value does not satisfy a schema constraint (e.g., a numeric range, string length, pattern, array size, map size, or enum value).
+
+- **`"error"`**: **MUST** reject record.
+    - Error: `ConstraintViolationError: Field 'age' value 200 violates <=120 constraint`
+- **`"warning"`** (default): **SHOULD** warn; value is preserved; parse succeeds.
+    - Warning: `Warning: Field 'age' value 200 violates <=120 constraint`
+
+#### 7.4.5 Invalid Constraint Definitions
 
 Parsers encounter invalid constraints when:
 - Constraint value is invalid for its type (e.g., `(>=abc)` where an integer is expected)
 - A type annotation contradicts the field's base type (e.g., `@email` on an `int` field)
 - Conflicting constraints are applied (e.g., `(>=10,<=5)`)
 
-**In Both Modes:**
 - **MUST** reject the schema during schema validation phase
 - **SHOULD** provide specific error with context
 
@@ -1612,16 +1573,14 @@ Parsers encounter invalid constraints when:
 - Error: `InvalidConstraintError: Type annotation '@email' cannot be applied to 'int' field`
 - Error: `ConstraintConflictError: Constraint '(>=10)' conflicts with '(<=5)' in field 'count'`
 
-#### 7.4.5 Invalid Enum Values
+#### 7.4.6 Invalid Enum Values
 
-**In Strict Mode:**
-- **MUST** reject record with value not in enum definition
-- Example: `EnumValidationError: Value 'superadmin' not in enum [admin,user,guest] for field 'role'`
+Controlled by `allowTypeCoercion` (an out-of-range enum value is a type violation).
 
-**In Lax Mode:**
-- **MAY** accept the value with a warning
-- **SHOULD** warn about invalid enum value
-- Example: `Warning: Value 'superadmin' not in defined enum for field 'role'`
+- **`"error"`**: **MUST** reject record.
+   - Error: `EnumValidationError: Value 'superadmin' not in enum [admin,user,guest] for field 'role'`
+- **`"warning"`** or **`"coerce"`** (default): **SHOULD** warn, **MAY** accept the value.
+   - Warning: `Warning: Value 'superadmin' not in defined enum for field 'role'`
 ---
 
 ## 8. Streaming
@@ -1643,7 +1602,7 @@ Parsers that implement streaming **MUST** adhere to the following requirements:
 #### 8.2.1 Two-Phase Processing
 
 1. **Schema Phase**:
-    - Parse and fully resolve all directives (`@version`, `@mode`, `@schema`)
+    - Parse and fully resolve all directives (`@version`, `@schema`)
     - Load and process all imported schema files
     - Parse all inline type definitions
     - Build complete schema registry
@@ -1688,7 +1647,6 @@ Parser behavior:
 ### Directives
 ```maxi
 @version:1.0.0
-@mode:strict              # or @mode:lax, or omit (lax is default)
 @schema:path/to/file.mxs
 @schema:https://example.com/schema.mxs
 ```
@@ -2029,17 +1987,15 @@ schema-sep      = "###" line-end
 ; Must appear before type definitions and data records.
 ; Examples:
 ;   @version:1.0.0
-;   @mode:strict
 ;   @schema:users.mxs
 ;   @schema:https://example.com/schema.mxs
 
 directive       = "@" directive-name ":" directive-value line-end
 
-directive-name  = "version" / "mode" / "schema"
+directive-name  = "version" / "schema"
 
 directive-value = 1*vchar-printable
                 ; version: semver (e.g., "1.0.0")
-                ; mode: "strict" / "lax"
                 ; schema: relative file path or absolute URL
 
 ; ============================================================================

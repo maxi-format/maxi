@@ -103,11 +103,11 @@ Planned companion projects:
 
 - **Language libraries**  
   Libraries for working with MAXI in various languages (for example):
-  - [Python - maxi-python](https://github.com/maxi-format/maxi-python)
   - [JavaScript - maxi-javascript](https://github.com/maxi-format/maxi-javascript)
-  - ...
+  - [PHP - maxi-php](https://github.com/maxi-format/maxi-php)
+  - [Python - maxi-python](https://github.com/maxi-format/maxi-python)
   
-  These libraries cover parsing, validation, schema handling, and (de-)serialization.
+  These libraries cover parsing, validation, schema handling, and (de-)serialization. Add you own library for your language of choice!
 
 ---
 

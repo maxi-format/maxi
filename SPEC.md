@@ -1395,14 +1395,16 @@ O:Order(id:int|user:User|total:decimal)
 
 Circular imports are fine, but circular **inheritance** is not:
 
+File: `users.mxs`
 ```maxi
-# users.mxs
 @schema:orders.mxs
-U:User<O>(id:int|name)  # ERROR: Circular inheritance
+U:User<O>(id:int|name)
+```
 
-# orders.mxs
+File: `orders.mxs`
+```maxi
 @schema:users.mxs
-O:Order<U>(id:int|total:decimal)  # ERROR: Circular inheritance
+O:Order<U>(id:int|total:decimal)
 ```
 
 This will trigger: `CircularInheritanceError: Circular inheritance detected: U -> O -> U`

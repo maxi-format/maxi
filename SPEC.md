@@ -467,6 +467,57 @@ U(1|Julie|admin|1)
 U(2|Matt|user|0)
 ```
 
+##### Enum Value Aliases
+
+Each enum value may have a short **alias** used as the wire token in data records. The parser always expands the alias to the full value when hydrating a record, so application code always sees the semantic value.
+
+**Syntax:** `alias:value` inside the bracket list.
+
+```maxi
+fieldName:enum[alias1:value1,alias2:value2]
+```
+
+**Rules:**
+- If a value has no alias, the value itself is the wire token (i.e. `admin` is shorthand for `admin:admin`). Mixed mode is allowed in a single enum definition.
+- Aliases must be unique within the enum definition.
+- Full values must be unique within the enum definition.
+- An alias must not equal the full value of another entry in the same enum definition (to avoid ambiguity when the dump API accepts either form).
+- Aliases may contain `ALPHA`, `DIGIT`, `_`, or `-` characters only (no whitespace, `,`, `[`, `]`, or `:`).
+- For `enum<int>`, the **value** (right side of `:`) must be an integer. Writing `enum<int>[active:1]` is a schema error because `active` is not an integer — the roles are fixed: alias is always the wire token, value is always the type-compatible semantic value.
+- `enum<int>` aliases save tokens only when the integer codes are **longer than the alias** (e.g. `R` for `1000`). For small codes like `0` or `1`, just use a plain `enum<int>[0,1]` — no aliases needed.
+- When **dumping**, the API accepts the full value **or** the alias as input; the output always uses the alias.
+
+**String alias → string value** (long descriptive names replaced with short mnemonics):
+```maxi
+U:User(
+  id:int|
+  name|
+  role:enum[a:admin,e:editor,v:viewer,m:moderator]      # alias saves tokens vs long names
+)
+```
+
+**String alias → int value** (aliases are most useful when int codes are large or non-obvious):
+```maxi
+D:Device(
+  id:int|
+  name|
+  state:enum<int>[O:900,I:910,R:1000,E:999]    # OFF=900, IDLE=910, RUNNING=1000, ERROR=999
+)
+```
+
+**Data representation** (wire tokens are the aliases):
+```maxi
+U(1|Alice|a)       # role=admin
+U(2|Bob|v)         # role=viewer
+D(1|sensor-A|R)    # state=1000 (RUNNING)
+D(2|sensor-B|E)    # state=999  (ERROR)
+```
+
+**Mixed mode** (some values have aliases, some don't):
+```maxi
+role:enum[a:admin,user,guest]  # "a" is alias for admin; user and guest are their own wire tokens
+```
+
 #### 3.2.3 Maps
 
 Maps are key-value pairs defined using the `map<keyType,valueType>` syntax.
@@ -1775,13 +1826,17 @@ C(3|{"key:with:colon":"value,with,comma"})
 ### Enums
 ```maxi
 # Schema
-role:enum[admin,user,guest]              # String enum (default)
-status:enum<int>[0,1,2]                  # Integer enum
-priority:enum<str>[low,medium,high]      # Explicit string enum
+U:User(
+  id:int|
+  name|
+  role:enum[a:admin,e:editor,v:viewer]| # string alias to string value
+  status:enum<int>[0,1,2]               # plain integer enum (no aliases needed)
+)
 
 # Data
-U(1|admin)
-U(2|1)
+U(1|Alice|a|1)     # role=admin, status=1
+U(2|Bob|v|0)       # role=viewer, status=0
+U(3|Carol|e|2)     # role=editor, status=2
 ```
 
 ### Constraints
@@ -1918,28 +1973,58 @@ deletedAt:str@datetime
 
 ## Appendix B: Error Codes
 
-```
-E001 - UnsupportedVersionError
-E002 - DuplicateTypeError
-E003 - UnknownTypeError
-E004 - UnknownDirectiveError
-E005 - InvalidSyntaxError
-E006 - SchemaMismatchError
-E007 - TypeMismatchError
-E008 - ConstraintViolationError
-E009 - UnresolvedReferenceError
-E010 - CircularInheritanceError
-E011 - MissingRequiredFieldError
-E012 - InvalidConstraintValueError
-E013 - UndefinedParentError
-E014 - ConstraintSyntaxError
-E015 - ArraySyntaxError
-E016 - DuplicateIdentifierError
-E017 - UnsupportedBinaryFormatError
-E018 - InvalidDefaultValueError
-E019 - StreamError
-E020 - SchemaLoadError
-```
+Error codes use a grouped `Enxx` scheme where the hundreds digit indicates the category.
+
+### E1xx — Schema Definition Errors
+
+| Code | Name                    | Description                                                   |
+|------|-------------------------|---------------------------------------------------------------|
+| E101 | InvalidSyntaxError      | The schema or record text cannot be parsed.                   |
+| E102 | DuplicateTypeError      | A type alias is defined more than once in the same schema.    |
+| E103 | UnknownDirectiveError   | An unrecognised `@directive` was encountered.                 |
+
+### E2xx — Type System Errors
+
+| Code | Name                    | Description                                                   |
+|------|-------------------------|---------------------------------------------------------------|
+| E201 | UnknownTypeError        | A type reference cannot be resolved in the schema.            |
+| E202 | UndefinedParentError    | An inherited parent type is not defined.                      |
+| E203 | CircularInheritanceError| The inheritance graph contains a cycle.                       |
+| E204 | UnresolvedReferenceError| An `@id` reference points to a record that does not exist.    |
+| E205 | DuplicateIdentifierError| Two records share the same `@id`-field value.                 |
+
+### E3xx — Constraint Errors
+
+| Code | Name                        | Description                                                   |
+|------|-----------------------------|---------------------------------------------------------------|
+| E301 | ConstraintSyntaxError       | A constraint expression is syntactically invalid.             |
+| E302 | InvalidConstraintValueError | A constraint parameter value is out of range or wrong type.   |
+| E303 | ConstraintViolationError    | A field value violates a declared constraint.                 |
+| E304 | ArraySyntaxError            | An array literal is malformed.                                |
+
+### E4xx — Data Record Errors
+
+| Code | Name                        | Description                                                   |
+|------|-----------------------------|---------------------------------------------------------------|
+| E401 | SchemaMismatchError         | A record's field count or structure does not match its type.  |
+| E402 | TypeMismatchError           | A field value cannot be coerced to the declared type.         |
+| E403 | MissingRequiredFieldError   | A required (`!`) field is absent or null in a record.         |
+| E404 | InvalidDefaultValueError    | A field's declared default value is not valid for its type.   |
+| E405 | UnsupportedBinaryFormatError| A binary annotation specifies an unrecognised encoding.       |
+
+### E5xx — Data Type Errors
+
+| Code | Name            | Description                                                             |
+|------|-----------------|-------------------------------------------------------------------------|
+| E501 | EnumAliasError  | An enum alias or value is duplicated, or an alias equals another value. |
+
+### E6xx — IO / Runtime Errors
+
+| Code | Name                  | Description                                                         |
+|------|-----------------------|---------------------------------------------------------------------|
+| E601 | UnsupportedVersionError | The `@version` directive specifies a version the parser does not support. |
+| E602 | SchemaLoadError       | An external schema file referenced by `@schema` could not be loaded. |
+| E603 | StreamError           | A streaming operation encountered an unrecoverable error.           |
 
 ---
 
@@ -2078,14 +2163,28 @@ element-type    = primitive-type [ constraints ]
                 / type-ref [ constraints ]
 
 ; Enum type: enum[val1,val2] or enum<int>[0,1,2]
+; Values may optionally have a wire alias: enum[a:admin,e:editor]
 enum-type       = "enum" [ "<" enum-base ">" ] "[" *WSP enum-values *WSP "]"
 
 enum-base       = "str" / "int"
 
 enum-values     = enum-value *( *WSP "," *WSP enum-value )
 
-enum-value      = quoted-string / integer / identifier
+; An enum value is either:
+;   alias:literal  - alias is the wire token, literal is the semantic value
+;   literal        - value acts as its own wire token (no alias)
+enum-value      = enum-alias ":" enum-literal
+                / enum-literal
+
+enum-alias      = 1*( ALPHA / DIGIT / "_" / "-" )
+                ; Must not contain whitespace, ",", "[", "]", or ":"
+
+enum-literal    = quoted-string / integer / identifier
                 ; quoted-string first to handle values with special chars
+                ; Semantic constraints (E501):
+                ;   - For enum<int>, enum-literal MUST be integer
+                ;   - enum-alias must not equal the full value of any other entry
+                ;     in the same enum definition
 
 ; Map type: map, map<valueType>, map<keyType,valueType>
 ; Key types are restricted to int or str (semantic rule, not syntax).
@@ -2370,7 +2469,7 @@ field-value     = explicit-null
                 / empty-value
 
 empty-value     = ""
-                ; Matches nothing — empty slot between pipes (e.g. ||)
+                ; Matches nothing - empty slot between pipes (e.g. ||)
 
 explicit-null   = "~"
 
@@ -2420,7 +2519,7 @@ unquoted-char   = %x21-21          ; !
                 / %x3D             ; =
                 / %x3F-5A          ; ? @ A-Z
                 / %x5E-7A          ; ^ _ ` a-z
-                / %x7C             ; |  — NOTE: excluded from field value context
+                / %x7C             ; |  - NOTE: excluded from field value context
                 / %x80-10FFFF      ; UTF-8 multibyte
                 ; Explicitly excluded: SP %x20, HTAB %x09, ( %x28, ) %x29,
                 ;   [ %x5B, ] %x5D, { %x7B, } %x7D, , %x2C, ~ %x7E, < %x3C, > %x3E
@@ -2502,7 +2601,7 @@ map-key         = quoted-string
 map-key-unquoted = 1*map-key-char
 
 map-key-char    = ALPHA / DIGIT / "_" / "-" / "."
-                ; Simple unquoted keys — must not contain ":" "," "{" "}"
+                ; Simple unquoted keys - must not contain ":" "," "{" "}"
 
 map-entry-value = explicit-null
                 / array-value
@@ -2554,14 +2653,14 @@ identifier      = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" / "-" )
 ; Whitespace and Line Endings
 ; ============================================================================
 ;
-; WSP  — horizontal whitespace only (SP / HTAB).
+; WSP  - horizontal whitespace only (SP / HTAB).
 ;        Used outside of multi-line constructs.
 ;
-; OWS  — optional whitespace including newlines (SP / HTAB / CR / LF).
+; OWS  - optional whitespace including newlines (SP / HTAB / CR / LF).
 ;        Used inside ( ), [ ], { } where multi-line layout is allowed
 ;        (data records, arrays, maps, inline objects).
 ;
-; line-end — marks the end of a logical line.
+; line-end - marks the end of a logical line.
 
 blank-line      = *WSP line-end
 
@@ -2572,7 +2671,7 @@ WSP             = SP / HTAB
                 ; Horizontal whitespace only
 
 OWS             = *( SP / HTAB / CR / LF )
-                ; Optional whitespace with newlines — used inside delimiters
+                ; Optional whitespace with newlines - used inside delimiters
 
 SP              = %x20
 

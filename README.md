@@ -3,7 +3,7 @@
 ![MAXI Logo](./assets/maxi-logo.svg)
 
 **MAXI** – **M**inimal **A**PI E**x**change **I**nterface  
-Maximum efficiency, minimum tokens.
+Compact by design. Readable by default.
 
 This repository contains the specification for the **MAXI** data format and schema language.
 
@@ -11,12 +11,15 @@ This repository contains the specification for the **MAXI** data format and sche
 
 ## What is MAXI?
 
-MAXI is a compact, schema-driven serialization format designed for:
+MAXI is a compact, schema-driven serialization format. Type definitions are declared once in a schema; records carry only positional values with no repeated field names or verbose delimiters. This makes it efficient wherever the same structure repeats across many records and the schema can be shared or declared once.
 
-- **LLM-friendly APIs** – minimize token usage in prompts and responses
-- **High-throughput services** – low overhead, easy to parse
-- **Human readability** – plain text, predictable structure
-- **Strong typing** – optional but well-defined schema and constraints
+Typical use cases:
+
+- **LLM contexts**: minimize token usage when passing structured datasets to or from language models
+- **REST APIs**; reduce payload size for high-throughput endpoints; schemas can be hosted externally and cached by clients
+- **WebSocket & RPC**: a human-readable alternative to binary formats like Protocol Buffers, still readable in logs and debuggers without tooling
+- **Data exports & bulk datasets**: schema agreed upon once, data stream carries only compact positional records
+- **Streaming pipelines**: schema-first design allows consumers to begin processing before the full dataset arrives
 
 Key ideas:
 

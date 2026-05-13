@@ -2,7 +2,7 @@
 
 **MAXI** - **M**inimal **A**PI E**x**change **I**nterface
 
-*Maximum efficiency, minimum tokens*
+*Compact by design. Readable by default.*
 
 ---
 
@@ -95,7 +95,17 @@
 
 ### 1.1 Introduction
 
-MAXI is a token-efficient data serialization format designed to minimize token usage in Large Language Model (LLM) contexts and API communications.
+MAXI is a compact, schema-driven data serialization format. It separates structure from data: type definitions are declared once in a schema, and records carry only positional values without repeated field names or verbose delimiters. This makes MAXI efficient wherever structured data with a known or shared schema is exchanged repeatedly and payload size, bandwidth, or token count matters.
+
+Typical use cases include:
+
+- **LLM contexts**: Minimizes token usage when passing structured datasets to or from language models
+- **REST APIs**: Reduces payload size for high-throughput endpoints; schemas can be hosted externally and cached by clients across requests
+- **WebSocket & RPC**: A human-readable, bandwidth-efficient alternative to binary formats like Protocol Buffers, still readable in logs and debuggers without tooling
+- **Data exports & bulk datasets**: The schema is transmitted or agreed upon once; the data stream contains only compact positional records
+- **Streaming pipelines**: Schema-first design allows consumers to begin processing before the full dataset arrives
+
+Any scenario where the same structure repeats across many records and the schema can be shared out-of-band or declared once is a good fit for MAXI.
 
 ### 1.2 Design Principles
 
@@ -103,7 +113,7 @@ MAXI is built on the following core principles:
 
 1. **Schema-based**: Define structure once, reuse for all records
    - Types are defined in a schema section or external `.mxs` files
-   - Data records reference types by alias for maximum token efficiency
+   - Data records reference types by alias for maximum compactness
 
 2. **Schema-optional**: Works with or without schema definitions
    - Pure data files (no schema) are valid MAXI (then the schema must be clear from context)
@@ -113,7 +123,7 @@ MAXI is built on the following core principles:
 3. **Positional fields**: No repeated field names in data records
    - Field order is defined by the schema
    - Data records contain only values, separated by `|`
-   - Reduces token count by eliminating field name repetition
+   - Reduces payload size by eliminating field name repetition
 
 4. **Minimal delimiters**: Use lightweight separators
    - Single-character delimiters: `|` `,` `:` `~`
@@ -123,9 +133,9 @@ MAXI is built on the following core principles:
 5. **Type-optional**: Types can be specified or inferred
    - Default type is `str` if not specified
    - Explicit types provide validation and documentation
-   - Parsers may infer types from values in lax mode
+   - Parsers may infer types from values when `allowTypeCoercion` is enabled
 
-6. **Human-readable**: Maintains readability while optimizing for tokens
+6. **Human-readable**: Maintains readability while minimizing overhead
    - Clear syntax without excessive punctuation
    - Multi-line support for complex records
    - Comments allowed in schema sections
@@ -199,6 +209,14 @@ U(2|Matt|matt@maxi.org)
 U(1|Julie|julie@maxi.org)
 ```
 
+**Out-of-band Schema:**
+```maxi
+U(1|Julie|julie@maxi.org)
+U(2|Matt|matt@maxi.org)
+```
+
+**Note:** When a data-only file (no `###`, no `@schema` directive) is used, the schema is expected to be known from context. For example, because all requests to an API endpoint share the same schema or because the schema is agreed upon by contract and loaded by the parser separately at initialization time. Parsers **MAY** accept a schema supplied out-of-band (e.g., as a constructor argument or pre-loaded registry). When an out-of-band schema is provided, the file is parsed against it exactly as if the schema had been declared inline: type resolution, reference resolution, type coercion, and constraint validation all apply normally.
+
 ### 2.2 Delimiters
 
 | Delimiter | Purpose                                              |
@@ -217,7 +235,7 @@ U(1|Julie|julie@maxi.org)
 ### 2.3 Directives
 
 Directives provide metadata about the MAXI file and must appear before any type definitions or data records if used.
-Directives are optional and can appear in any order, but they must precede schema definitions and data records.
+Directives are optional. When present, they may appear in any order relative to one another, but all directives must precede any schema definitions and data records.
 
 #### 2.3.1 Version Directive
 
@@ -407,7 +425,7 @@ MAXI supports the following primitive types, which are intrinsic to the format a
 
 **Note:** `str` is the default type if no type annotation is provided.
 
-**Note:** For `bool`, parsers **MUST** accept `true` and `false` (lowercase) and the integers `1` and `0`. For token efficiency, writers **SHOULD** emit `1` or `0`.
+**Note:** For `bool`, parsers **MUST** accept `true` and `false` (lowercase) and the integers `1` and `0`. For compactness, writers **SHOULD** emit `1` or `0`.
 
 **Note:** For `bytes`, the default encoding format is `@base64`.
 
@@ -478,7 +496,7 @@ fieldName:enum[alias1:value1,alias2:value2]
 ```
 
 **Rules:**
-- If a value has no alias, the value itself is the wire token (i.e. `admin` is shorthand for `admin:admin`). Mixed mode is allowed in a single enum definition.
+- If a value has no alias, the value itself is the wire token (i.e., `admin` is shorthand for `admin:admin`). Mixed mode is allowed in a single enum definition.
 - Aliases must be unique within the enum definition.
 - Full values must be unique within the enum definition.
 - An alias must not equal the full value of another entry in the same enum definition (to avoid ambiguity when the dump API accepts either form).
@@ -486,6 +504,7 @@ fieldName:enum[alias1:value1,alias2:value2]
 - For `enum<int>`, the **value** (right side of `:`) must be an integer. Writing `enum<int>[active:1]` is a schema error because `active` is not an integer — the roles are fixed: alias is always the wire token, value is always the type-compatible semantic value.
 - `enum<int>` aliases save tokens only when the integer codes are **longer than the alias** (e.g. `R` for `1000`). For small codes like `0` or `1`, just use a plain `enum<int>[0,1]` — no aliases needed.
 - When **dumping**, the API accepts the full value **or** the alias as input; the output always uses the alias.
+- When **parsing**, the API **MUST** always hydrate to the full semantic value, regardless of whether the wire token was an alias or a value. Application code should only ever see the full value (e.g., `admin`), never the alias (e.g., `a`).
 
 **String alias → string value** (long descriptive names replaced with short mnemonics):
 ```maxi
@@ -561,7 +580,7 @@ Alias:TypeName(field1|field2|field3)
 U:User(id:int|name|email|age:int)
 ```
 
-The alias (in this case `U`) is used in data records for token efficiency.
+The alias (in this case `U`) is used in data records for compactness.
 The full type name (in this case `User`) is optional and provides documentation and clarity.
 
 #### 3.3.2 Type Name Naming Rules
@@ -748,7 +767,7 @@ D(dog_name|animal|5|labrador)
 
 Field order for `Dog`: `name` (from A, first parent takes precedence) | `type` (from A) | `age` (from C) | `breed` (own)
 
-The `name` field from `A` is used; the `name` from `C` is ignored due to inheritance order.
+The field slot for `name` is filled by the definition from `A`. The `name` field from `C` is disregarded because a field with that name has already been inherited from a prior parent.
 
 **Important Notes:**
 
@@ -891,7 +910,7 @@ The following constraints apply to `decimal` fields:
 | `N.X`      | Precision and scale shorthand (N is max digits before decimal, X is exact digits after decimal)                                                        |
 | `.X:Y`     | Scale only (X is min digits after decimal, Y is max digits after decimal)                                                                             |
 | `.X`       | Scale only (X is exact digits after decimal)                                                                                                          |
-| `M:N.`     | Precision only (M is min value before decimal, N is max value before decimal)                                                                         |
+| `M:N.`     | Precision only (M is min digits before decimal, N is max digits before decimal)                                                                       |
 | `N.`       | Precision only (N is max value before decimal)                                                                                                        |
 
 **Examples:**
@@ -1108,7 +1127,7 @@ By default, **all fields are `null`** unless:
 | Syntax      | Meaning                                       | When to Use                                                   |
 |-------------|-----------------------------------------------|---------------------------------------------------------------|
 | `\|value\|` | Field has a value                             | Normal case                                                   |
-| `\|\|`      | Field is null or the default value if defined | When you need an empty string you need to add a default `=""` |
+| `\|\|`      | Field is set to its default value, or null if no default is defined. | To accept a schema-defined default. To get an empty string, either provide `""` explicitly or ensure the default is `=""`. |
 | `\|~\|`     | Field is null (overrides default)             | When you want null despite having a default value             |
 | *(omitted)* | Field is null OR uses default                 | When field can be inferred from schema defaults               |
 **Examples:**
@@ -1150,7 +1169,7 @@ U(4|"")          # name = "" (explicit empty string, even without default)
 - `~` is **only needed** when you want to set a field to `null` despite having a `default` value defined
 - Trailing omitted fields automatically use their defaults or become `null`
 
-### 5.2.1 Default Value Definition
+#### 5.2.1 Default Value Definition
 
 It is possible to define default values for fields in type definitions.
 Default values are used when a field is omitted or left empty in a data record.
@@ -1173,11 +1192,11 @@ U:User(
 
 **Note:** Default values are defined after the constraints (if any).
 
-## 5.3 Objects (Inline vs Reference)
+### 5.3 Objects (Inline vs Reference)
 
 MAXI supports both **inline object definitions** and **object references** for fields that are typed as other objects. This provides flexibility to avoid duplication while allowing full object embedding when needed.
 
-### 5.3.1 Object References
+#### 5.3.1 Object References
 
 When a field is defined as another type, you can reference an existing object by its identifier instead of embedding the full object.
 
@@ -1195,7 +1214,7 @@ O(101|2|149.50)          # References User with id=2
 
 In this example, `O(100|1|99.99)` references the User object with `id=1`.
 
-### 5.3.2 Inline Object Definitions
+#### 5.3.2 Inline Object Definitions
 
 Instead of referencing an existing object, you can define the object inline by wrapping it in parentheses.
 
@@ -1217,7 +1236,7 @@ O(101|(2|Matt|matt@maxi.org)|149.50)        # Inline User definition
 
 In the second Order record, `(2|Matt|matt@maxi.org)` defines a User object inline.
 
-### 5.3.3 Mixed Usage
+#### 5.3.3 Mixed Usage
 
 You can mix references and inline definitions in the same dataset:
 
@@ -1236,7 +1255,7 @@ O(102|1|(2|456 Oak Ave|LA|90001)|199.99)                   # Reference User, inl
 O(103|(3|Anna|anna@maxi.org)|(3|789 Elm|SF|94102)|249.99)  # Both inline
 ```
 
-### 5.3.4 Nested Inline Objects
+#### 5.3.4 Nested Inline Objects
 
 Inline definitions can be nested to any depth:
 
@@ -1252,7 +1271,7 @@ O(100|(1|Julie|julie@maxi.org|1)|99.99)           # User inline, Company ref
 O(101|(2|Matt|matt@maxi.org|(2|Beta Inc))|149.50) # User inline, Company inline
 ```
 
-### 5.3.5 When to Use References vs Inline
+#### 5.3.5 When to Use References vs Inline
 
 **Use References When:**
 - The same object appears in multiple records (avoid duplication)
@@ -1266,7 +1285,7 @@ O(101|(2|Matt|matt@maxi.org|(2|Beta Inc))|149.50) # User inline, Company inline
 - Embedding improves readability
 - Avoiding forward reference complexity
 
-### 5.3.6 Object Identifiers
+#### 5.3.6 Object Identifiers
 Identifiers are defined implicitly by the attribute name `id` with type `int` or `str`, or can be explicitly marked with the `id` constraint:
 
 ```maxi
@@ -1283,11 +1302,11 @@ OI:OrderItem(id:int|order_item_id:int(id)|product_variant:PV|quantity:int) # ord
 - Only one field per type can be marked as an identifier.
 - If multiple objects of the same type use the same identifier value, the parser raises a `DuplicateIdentifierError`.
 
-### 5.3.7 Reference Resolution
+#### 5.3.7 Reference Resolution
 
 **Parser Behavior:**
 
-1. **Immediate Resolution** (preferred): When a reference is encountered (e.g., `O(100|1|99.99)`), the parser looks up the referenced object by ID.
+1. **Immediate Resolution**: When a reference is encountered (e.g., `O(100|1|99.99)`), the parser looks up the referenced object by ID.
 2. **Forward References**: If the referenced object hasn't been defined yet, parsers **MAY** support forward references by deferring resolution until all records are loaded.
 3. **Unresolved references**: If the referenced object hasn't been found and `allowForwardReferences` is `false`, the parser **MUST** trigger an error.
 
@@ -1316,6 +1335,21 @@ U:User(id:int|name|tags:str[]|scores:int[])
 ###
 U(1|Julie|[tag1,tag2,tag3]|[95,87,92])
 U(2|Matt|[]|[88])                        # Empty array for tags
+```
+
+**Arrays of Typed Objects:**
+
+When the element type is an object type, each array element can be an ID reference or an inline definition, and both forms may be mixed in the same array.
+
+```maxi
+I:Item(id:int|name|price:decimal)
+O:Order(id:int|items:I[])
+###
+I(1|Widget|9.99)
+I(2|Gadget|4.99)
+O(100|[1,2])                          # Both elements are ID references
+O(101|[(3|Doohickey|1.99)])           # Single inline element
+O(102|[1,(3|Doohickey|1.99)])         # Mixed: ID reference and inline
 ```
 
 #### 5.4.2 Maps
@@ -1634,6 +1668,7 @@ Controlled by `allowTypeCoercion` (an out-of-range enum value is a type violatio
    - Error: `EnumValidationError: Value 'superadmin' not in enum [admin,user,guest] for field 'role'`
 - **`"warning"`** or **`"coerce"`** (default): **SHOULD** warn, **MAY** accept the value.
    - Warning: `Warning: Value 'superadmin' not in defined enum for field 'role'`
+
 ---
 
 ## 8. Streaming
@@ -1664,7 +1699,7 @@ Parsers that implement streaming **MUST** adhere to the following requirements:
 2. **Data Phase**:
     - Process records one at a time
     - Emit parsed records via callback/iterator
-    - Validate each record against schema (if strict mode enabled)
+    - Validate each record against schema according to configured parser options
     - Resolve object references incrementally
 
 #### 8.2.2 Schema-First Processing
@@ -1758,7 +1793,7 @@ U:User(id|name|email)
 U:User(id:int|name|email)
 
 # Alias only (no full type name)
-U(id:int|name)
+U(id|name|email)
 
 # With constraints and defaults
 U:User(
@@ -1829,7 +1864,7 @@ C(3|{"key:with:colon":"value,with,comma"})
 U:User(
   id:int|
   name|
-  role:enum[a:admin,e:editor,v:viewer]| # string alias to string value
+  role:enum[a:admin,e:editor,v:viewer,m:moderator]      # string alias to string value
   status:enum<int>[0,1,2]               # plain integer enum (no aliases needed)
 )
 
@@ -2254,7 +2289,7 @@ integer            = [ "-" ] 1*DIGIT
 decimal-number     = [ "-" ] 1*DIGIT "." 1*DIGIT
 
 ; --- Pattern constraint (str fields only) ---
-; Example: pattern:^[a-zA-Z0-9_]+$
+; Example: pattern:^[a-zA-Z0-9]+$
 pattern-constraint = "pattern:" pattern-value
 
 pattern-value      = 1*pattern-char

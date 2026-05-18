@@ -16,8 +16,9 @@
     - 2.1 [File Structure](#21-file-structure)
     - 2.2 [Delimiters](#22-delimiters)
     - 2.3 [Directives](#23-directives)
-        - 2.3.1 [Version Directive](#231-version-directive)
-        - 2.3.2 [Schema Directive](#232-schema-directive)
+        - 2.3.1 [MAXI Directive](#231-maxi-directive)
+        - 2.3.2 [Version Directive](#232-version-directive)
+        - 2.3.3 [Schema Directive](#233-schema-directive)
     - 2.4 [Comments](#24-comments)
     - 2.5 [String Escaping](#25-string-escaping)
     - 2.6 [File Format and Extensions](#26-file-format-and-extensions)
@@ -171,7 +172,7 @@ O(101|2|149.50)
 MAXI files consist of an optional schema section followed by a data section, separated by a `###` delimiter.
 
 ```maxi
-[@version:X.Y.Z]
+[@maxi:X.Y.Z]
 [@schema:external.mxs]
 
 [schema definitions]
@@ -237,24 +238,44 @@ U(2|Matt|matt@maxi.org)
 Directives provide metadata about the MAXI file and must appear before any type definitions or data records if used.
 Directives are optional. When present, they may appear in any order relative to one another, but all directives must precede any schema definitions and data records.
 
-#### 2.3.1 Version Directive
+#### 2.3.1 MAXI Directive
 
-Specifies the MAXI version used in the file.
+Specifies the MAXI format version required to parse this file. Parsers use this to detect incompatible format versions and reject files they cannot handle.
 
 **Syntax:**
 ```maxi
-@version:1.0.0
+@maxi:1.0.0
 ```
 
 **Example:**
 ```maxi
-@version:1.0.0
+@maxi:1.0.0
 U:User(id:int|name|email)
 ###
 U(1|Julie|julie@maxi.org)
 ```
 
-#### 2.3.2 Schema Directive
+#### 2.3.2 Version Directive
+
+Declares the user-defined API or schema version of the file. This value is informational. Parsers MUST store it in the parse result but MUST NOT validate or reject records based on this value.
+
+**Syntax:**
+```maxi
+@version:1.2.0
+```
+
+**Example:**
+```maxi
+@maxi:1.0.0
+@version:2.3.0
+U:User(id:int|name|email)
+###
+U(1|Julie|julie@maxi.org)
+```
+
+The value may be any non-empty string. Semver is recommended but not required.
+
+#### 2.3.3 Schema Directive
 
 Imports type definitions from external schema files. Multiple `@schema` directives can be specified, and they are processed in order.
 
@@ -1538,7 +1559,7 @@ This section defines how parsers should handle errors and malformed data. Compli
 
 Parsers **MUST** reject (fail-fast) in these cases:
 
-- **Unsupported @version**: File specifies a version the parser doesn't support
+- **Unsupported @maxi**: File specifies a MAXI format version the parser doesn't support
     - Error: `UnsupportedVersionError: Parser supports v1.0.0, file requires v2.0.0`
 
 - **Duplicate type aliases in schema**: Same alias defined multiple times in a single schema
@@ -1690,7 +1711,7 @@ Parsers that implement streaming **MUST** adhere to the following requirements:
 #### 8.2.1 Two-Phase Processing
 
 1. **Schema Phase**:
-    - Parse and fully resolve all directives (`@version`, `@schema`)
+    - Parse and fully resolve all directives (`@maxi`, `@schema`)
     - Load and process all imported schema files
     - Parse all inline type definitions
     - Build complete schema registry
@@ -1712,7 +1733,7 @@ The `###` delimiter marks the transition from schema to data. Parsers **MUST**:
 **Example:**
 
 ```maxi
-@version:1.0.0
+@maxi:1.0.0
 @schema:https://api.example.com/schemas/users.mxs
 U:User(id:int|name|email)
 ###
@@ -1722,7 +1743,7 @@ U(2|Matt|matt@maxi.org)
 ```
 
 Parser behavior:
-1. Parse `@version` directive
+1. Parse `@maxi` directive
 2. Fetch and parse remote schema `users.mxs`
 3. Parse inline `User` type definition
 4. Encounter `###` delimiter → schema phase complete
@@ -1734,7 +1755,8 @@ Parser behavior:
 
 ### Directives
 ```maxi
-@version:1.0.0
+@maxi:1.0.0
+@version:1.2.0
 @schema:path/to/file.mxs
 @schema:https://example.com/schema.mxs
 ```
@@ -2057,7 +2079,7 @@ Error codes use a grouped `Enxx` scheme where the hundreds digit indicates the c
 
 | Code | Name                  | Description                                                         |
 |------|-----------------------|---------------------------------------------------------------------|
-| E601 | UnsupportedVersionError | The `@version` directive specifies a version the parser does not support. |
+| E601 | UnsupportedVersionError | The `@maxi` directive specifies a format version the parser does not support. |
 | E602 | SchemaLoadError       | An external schema file referenced by `@schema` could not be loaded. |
 | E603 | StreamError           | A streaming operation encountered an unrecoverable error.           |
 
@@ -2108,16 +2130,17 @@ schema-sep      = "###" line-end
 ; ============================================================================
 ; Must appear before type definitions and data records.
 ; Examples:
-;   @version:1.0.0
+;   @maxi:1.0.0
 ;   @schema:users.mxs
 ;   @schema:https://example.com/schema.mxs
 
 directive       = "@" directive-name ":" directive-value line-end
 
-directive-name  = "version" / "schema"
+directive-name  = "maxi" / "version" / "schema"
 
 directive-value = 1*vchar-printable
-                ; version: semver (e.g., "1.0.0")
+                ; maxi: semver (e.g., "1.0.0")
+                ; version: any string, semver recommended
                 ; schema: relative file path or absolute URL
 
 ; ============================================================================

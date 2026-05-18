@@ -36,7 +36,7 @@ Key ideas:
 Schema + data in a single `.maxi` file:
 
 ```maxi
-@version:1.0.0
+@maxi:1.0.0
 
 U:User(id:int|name:str(!)|email:str@email)
 O:Order(id:int|user:U|total:decimal)

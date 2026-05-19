@@ -84,32 +84,31 @@ Suggested content types:
 
 ## Status
 
-The spec is currently **v1.0.0 – DRAFT**.  
+The spec is currently **1.0.0-alpha.1**.  
 Feedback, issues, and suggestions are welcome via GitHub issues and pull requests.
 
 ---
 
-## Ecosystem & Roadmap
+## Ecosystem
 
 This specification is the foundation for a broader MAXI ecosystem.
 
-Planned companion projects:
-
 - **Test data & conformance repository** [maxi-testdata](https://github.com/maxi-format/maxi-testdata)  
-  A separate repository containing:
-  - Canonical example `.maxi` and `.mxs` files
-  - Edge cases and malformed inputs
-  - Expected parse/validation results  
-  
-  This will help implementers build and verify MAXI parsers and serializers.
+  Canonical example `.maxi`/`.mxs` files, edge cases, malformed inputs, and expected
+  parse/validation results. Used by all language libraries to verify conformance.
 
 - **Language libraries**  
-  Libraries for working with MAXI in various languages (for example):
+  - [Go - maxi-go](https://github.com/maxi-format/maxi-go)
+  - [Java - maxi-java](https://github.com/maxi-format/maxi-java)
   - [JavaScript - maxi-javascript](https://github.com/maxi-format/maxi-javascript)
   - [PHP - maxi-php](https://github.com/maxi-format/maxi-php)
   - [Python - maxi-python](https://github.com/maxi-format/maxi-python)
-  
-  These libraries cover parsing, validation, schema handling, and (de-)serialization. Add you own library for your language of choice!
+
+  All libraries cover parsing, validation, schema handling, and (de-)serialization and pass the shared conformance suite.
+  Add your own library for your language of choice!
+
+- **Examples**
+  [maxi-examples](https://github.com/maxi-format/maxi-examples) - cross-language demo with servers and CLI clients in Go, Java, JavaScript, PHP, and Python all exchanging `application/maxi` over HTTP. Includes a browser client and a Docker Compose setup to run everything locally.
 
 ---
 

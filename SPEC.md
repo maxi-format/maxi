@@ -1,4 +1,4 @@
-# MAXI Specification v1.0.0 - DRAFT
+# MAXI Specification 1.0.0-alpha.1
 
 **MAXI** - **M**inimal **A**PI E**x**change **I**nterface
 

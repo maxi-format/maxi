@@ -31,7 +31,7 @@ An "additional field" is a key-value pair in a data record where the key does no
 
 -   `"ignore"` (Default): The parser silently discards the additional field. The field and its value are not included in the parsed output.
 -   `"warning"`: The parser includes the additional field in the parsed output and emits a `MaxiWarning` for each such field. The parse is considered successful.
--   `"error"`: The parser emits or throws a `MaxiError` (error code **E060**) as soon as it encounters an additional field. The parse fails.
+-   `"error"`: The parser emits or throws a `MaxiError` (error code **E406**) as soon as it encounters an additional field. The parse fails.
 
 ### 2.2. `allowMissingFields` Behavior
 
@@ -39,7 +39,7 @@ A "missing field" is a field defined in the schema that is not present in a data
 
 -   `"null"` (Default): The parser fills the missing field with `null` (or the language-equivalent `nil`/`None`). If the schema specifies a default value for the field, the default value is used instead. This action is performed silently.
 -   `"warning"`: The parser behaves like `"null"` but also emits a `MaxiWarning` for each missing field that is filled.
--   `"error"`: The parser emits or throws a `MaxiError` (error code **E061**) for any missing required field. The parse fails.
+-   `"error"`: The parser emits or throws a `MaxiError` (error code **E403**) for any missing required field. The parse fails.
 
 ### 2.3. `allowTypeCoercion` Behavior
 
@@ -47,7 +47,7 @@ Type coercion occurs when a scalar value in a data record has a different type t
 
 -   `"coerce"` (Default): The parser attempts to convert the value to the target type (e.g., `"123"` → `123`). If coercion is successful, the result is used silently. If it fails, an error should be raised.
 -   `"warning"`: The parser attempts to coerce the value and, if successful, emits a `MaxiWarning`.
--   `"error"`: The parser does not attempt coercion. It emits or throws a `MaxiError` (error code **E062**) for any type mismatch. The parse fails.
+-   `"error"`: The parser does not attempt coercion. It emits or throws a `MaxiError` (error code **E402**) for any type mismatch. The parse fails.
 
 ### 2.4. `allowConstraintViolations` Behavior
 
@@ -57,14 +57,14 @@ A constraint violation occurs when a value, while having the correct type, fails
 - `array` or `map` size (`size`, `minSize`, `maxSize`).
 
 -   `"warning"` (Default): The parser accepts the value but emits a `MaxiWarning` for each violation. The parse is successful.
--   `"error"`: The parser emits or throws a `MaxiError` (error code **E008**) as soon as it encounters a constraint violation. The parse fails.
+-   `"error"`: The parser emits or throws a `MaxiError` (error code **E303**) as soon as it encounters a constraint violation. The parse fails.
 
 ### 2.5. `allowForwardReferences` Behavior
 
 A forward reference is a reference (`@id`) to a record that has not yet been parsed (i.e., it appears later in the document or stream).
 
 -   `true` (Default): The parser must defer the resolution of references. It should first parse all records, storing them in a map by their ID. After all records are loaded, it can resolve all references.
--   `false`: The parser attempts to resolve references immediately. If a reference's target ID has not yet been encountered, the parser emits or throws a `MaxiError` (error code **E063**). The parse fails.
+-   `false`: The parser attempts to resolve references immediately. If a reference's target ID has not yet been encountered, the parser emits or throws a `MaxiError` (error code **E204**). The parse fails.
 
 ### 2.6. `allowUnknownTypes` Behavior
 
@@ -72,7 +72,7 @@ An unknown type occurs when a data record uses a type alias that was not defined
 
 -   `"ignore"`: The parser silently skips the record and its entire value. It is not included in the output.
 -   `"warning"` (Default): The parser emits a `MaxiWarning` and attempts a best-effort parse of the record's fields without type or constraint information.
--   `"error"`: The parser emits or throws a `MaxiError` (error code **E064**) as soon as it encounters a record with an unknown type alias. The parse fails.
+-   `"error"`: The parser emits or throws a `MaxiError` (error code **E201**) as soon as it encounters a record with an unknown type alias. The parse fails.
 
 ---
 
@@ -91,12 +91,12 @@ Parsers should use the standardized error and warning codes defined in Appendix 
 
 | Flag | Error Code | Description |
 |---|---|---|
-| `allowAdditionalFields` | **E060** | An additional field was found in a record. |
-| `allowMissingFields` | **E061** | A required field was missing from a record. |
-| `allowTypeCoercion` | **E062** | A field value had a mismatched type. |
-| `allowConstraintViolations` | **E008** | A field value violated a schema constraint. |
-| `allowForwardReferences` | **E063** | A forward reference was encountered when disallowed. |
-| `allowUnknownTypes` | **E064** | A record's type alias is not defined in the schema. |
+| `allowAdditionalFields` | **E406** | An additional field was found in a record. |
+| `allowMissingFields` | **E403** | A required field was missing from a record. |
+| `allowTypeCoercion` | **E402** | A field value had a mismatched type. |
+| `allowConstraintViolations` | **E303** | A field value violated a schema constraint. |
+| `allowForwardReferences` | **E204** | A forward reference was encountered when disallowed. |
+| `allowUnknownTypes` | **E201** | A record's type alias is not defined in the schema. |
 
 ## 5. Test Harness Integration
 

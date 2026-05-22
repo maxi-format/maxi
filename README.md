@@ -84,7 +84,7 @@ Suggested content types:
 
 ## Status
 
-The spec is currently **1.0.0-alpha.1**.  
+The spec is currently **1.0.0-alpha.2**.  
 Feedback, issues, and suggestions are welcome via GitHub issues and pull requests.
 
 ---
@@ -96,6 +96,9 @@ This specification is the foundation for a broader MAXI ecosystem.
 - **Test data & conformance repository** [maxi-testdata](https://github.com/maxi-format/maxi-testdata)  
   Canonical example `.maxi`/`.mxs` files, edge cases, malformed inputs, and expected
   parse/validation results. Used by all language libraries to verify conformance.
+
+- **CLI converter**  
+  [maxi-converter](https://github.com/maxi-format/maxi-go/tree/main/cmd/maxi-converter) - CLI tool (part of `maxi-go`) for converting between MAXI and JSON. Install via `go install` or download a pre-built binary from [releases](https://github.com/maxi-format/maxi-go/releases).
 
 - **Language libraries**  
   - [Go - maxi-go](https://github.com/maxi-format/maxi-go)

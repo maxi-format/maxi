@@ -1,4 +1,4 @@
-# MAXI Specification 1.0.0-alpha.1
+# MAXI Specification 1.0.0-alpha.2
 
 **MAXI** - **M**inimal **A**PI E**x**change **I**nterface
 
@@ -522,6 +522,7 @@ fieldName:enum[alias1:value1,alias2:value2]
 - Full values must be unique within the enum definition.
 - An alias must not equal the full value of another entry in the same enum definition (to avoid ambiguity when the dump API accepts either form).
 - Aliases may contain `ALPHA`, `DIGIT`, `_`, or `-` characters only (no whitespace, `,`, `[`, `]`, or `:`).
+- Unaliased `enum<str>` values may contain any combination of letters, digits, `_`, `-`, and `.` (e.g., `3G`, `2xl`, `v1.0` are all valid unquoted values). Use a quoted string only when the value contains `,`, `[`, `]`, `:`, `"`, or whitespace.
 - For `enum<int>`, the **value** (right side of `:`) must be an integer. Writing `enum<int>[active:1]` is a schema error because `active` is not an integer — the roles are fixed: alias is always the wire token, value is always the type-compatible semantic value.
 - `enum<int>` aliases save tokens only when the integer codes are **longer than the alias** (e.g. `R` for `1000`). For small codes like `0` or `1`, just use a plain `enum<int>[0,1]` — no aliases needed.
 - When **dumping**, the API accepts the full value **or** the alias as input; the output always uses the alias.
@@ -851,6 +852,7 @@ fieldName:type(constraint1,constraint2,...)
 | Constraint | Description                                      |
 |------------|--------------------------------------------------|
 | `!`        | Field is required (must be present and non-null) |
+| `id`       | Marks this field as the object identifier (see §5.3.6). Only one field per type may carry this constraint; the field is implicitly required. |
 
 **Example:**
 
@@ -932,7 +934,7 @@ The following constraints apply to `decimal` fields:
 | `.X:Y`     | Scale only (X is min digits after decimal, Y is max digits after decimal)                                                                             |
 | `.X`       | Scale only (X is exact digits after decimal)                                                                                                          |
 | `M:N.`     | Precision only (M is min digits before decimal, N is max digits before decimal)                                                                       |
-| `N.`       | Precision only (N is max value before decimal)                                                                                                        |
+| `N.`       | Precision only (N is max digits before decimal)                                                                                                       |
 
 **Examples:**
 
@@ -1123,7 +1125,7 @@ matt@maxi.org|
 
 The type alias must still be present, followed by a parenthesized list of field values (one per line or multiple per line).
 
-**Note:** Values can appear on the same line or on separate lines; all whitespace between `(` and `)` is normalized to field separators `|`.
+**Note:** Values can appear on the same line or on separate lines; whitespace around `|` field separators is ignored, but `|` separators are still required between each field value.
 
 ### 5.2 Field Values & Null Semantics
 
@@ -1562,7 +1564,7 @@ Parsers **MUST** reject (fail-fast) in these cases:
 - **Unsupported @maxi**: File specifies a MAXI format version the parser doesn't support
     - Error: `UnsupportedVersionError: Parser supports v1.0.0, file requires v2.0.0`
 
-- **Duplicate type aliases in schema**: Same alias defined multiple times in a single schema
+- **Duplicate type aliases in schema**: Same alias defined more than once within the same schema file. Cross-file overrides (§6.2) are permitted and do not trigger this error.
     - Error: `DuplicateTypeError: Type alias 'U' defined multiple times`
 
 - **Invalid type reference**: A field references a type that doesn't exist in the schema
@@ -1570,7 +1572,7 @@ Parsers **MUST** reject (fail-fast) in these cases:
 
 - **Records violating parser flags configured as `error`**: When a parser flag is set to `"error"`, the corresponding violation **MUST** cause a parse failure.
     - Too many fields (`allowAdditionalFields: "error"`): `AdditionalFieldsError: Record 'U' has extra fields`
-    - Missing required fields (`allowMissingFields: "error"`): `SchemaValidationError: Record 'U(2)' missing required fields: name, email`
+    - Missing required fields (`allowMissingFields: "error"`): `MissingRequiredFieldError: Record 'U(2)' missing required fields: name, email`
     - Type mismatch with no coercion (`allowTypeCoercion: "error"`): `TypeMismatchError: Field 'age' expects int, got string`
     - Unresolved reference (`allowForwardReferences: false`): `UnresolvedReferenceError: No record found for User id=1`
     - Unknown type alias (`allowUnknownTypes: "error"`): `UnknownTypeError: Type alias 'Xyz' not defined`
@@ -2047,8 +2049,8 @@ Error codes use a grouped `Enxx` scheme where the hundreds digit indicates the c
 | E201 | UnknownTypeError        | A type reference cannot be resolved in the schema.            |
 | E202 | UndefinedParentError    | An inherited parent type is not defined.                      |
 | E203 | CircularInheritanceError| The inheritance graph contains a cycle.                       |
-| E204 | UnresolvedReferenceError| An `@id` reference points to a record that does not exist.    |
-| E205 | DuplicateIdentifierError| Two records share the same `@id`-field value.                 |
+| E204 | UnresolvedReferenceError| A reference points to a record that does not exist.           |
+| E205 | DuplicateIdentifierError| Two records share the same identifier field value.            |
 
 ### E3xx — Constraint Errors
 
@@ -2068,6 +2070,7 @@ Error codes use a grouped `Enxx` scheme where the hundreds digit indicates the c
 | E403 | MissingRequiredFieldError   | A required (`!`) field is absent or null in a record.         |
 | E404 | InvalidDefaultValueError    | A field's declared default value is not valid for its type.   |
 | E405 | UnsupportedBinaryFormatError| A binary annotation specifies an unrecognised encoding.       |
+| E406 | AdditionalFieldsError       | A data record contains more fields than its type definition.  |
 
 ### E5xx — Data Type Errors
 
@@ -2117,6 +2120,9 @@ It is intended to make parser implementations easier and more consistent.
 maxi-file       = schema-file schema-sep data-section
                 / data-section
                 ; A .maxi file is either schema+data, or data-only (no ###)
+
+mxs-file        = schema-file
+                ; A .mxs file contains schema definitions only (no ### separator or data section)
 
 schema-file     = *schema-element
 
@@ -2237,12 +2243,20 @@ enum-value      = enum-alias ":" enum-literal
 enum-alias      = 1*( ALPHA / DIGIT / "_" / "-" )
                 ; Must not contain whitespace, ",", "[", "]", or ":"
 
-enum-literal    = quoted-string / integer / identifier
+enum-literal    = quoted-string / enum-token
                 ; quoted-string first to handle values with special chars
+                ; enum-token covers identifiers, digit-starting values (3G, 2xl),
+                ; and decimal-like strings (v1.0).
                 ; Semantic constraints (E501):
-                ;   - For enum<int>, enum-literal MUST be integer
+                ;   - For enum<int>, enum-literal MUST be a valid integer token
                 ;   - enum-alias must not equal the full value of any other entry
                 ;     in the same enum definition
+
+enum-token      = 1*enum-token-char
+                ; Unquoted enum literal: any printable chars except the enum
+                ; delimiters (",", "[", "]", ":"), whitespace, and DQUOTE.
+
+enum-token-char = ALPHA / DIGIT / "_" / "-" / "."
 
 ; Map type: map, map<valueType>, map<keyType,valueType>
 ; Key types are restricted to int or str (semantic rule, not syntax).
@@ -2567,22 +2581,18 @@ integer-value   = [ "-" ] 1*DIGIT
 ; Unquoted strings: any sequence not containing MAXI delimiter characters.
 ; Leading/trailing horizontal whitespace is stripped by the parser.
 ; Use quoted-string when the value contains |  ,  (  )  [  ]  {  }  ~  or whitespace.
+; Note: < and > are NOT delimiters in data records (they are schema-only syntax)
+; and are therefore allowed in unquoted field values.
 unquoted-string = 1*unquoted-char
 
 unquoted-char   = %x21-21          ; !
                 / %x23-26          ; # $ % &     (excludes " %x22)
                 / %x2A-2B          ; * +
-                / %x2D-2F          ; - . /
-                / %x30-3B          ; 0-9 : ;
-                / %x3D             ; =
-                / %x3F-5A          ; ? @ A-Z
-                / %x5E-7A          ; ^ _ ` a-z
-                / %x7C             ; |  - NOTE: excluded from field value context
+                / %x2D-5A          ; - . / 0-9 : ; < = > ? @ A-Z
+                / %x5E-7A          ; ^ _ ` a-z   (excludes [ \ ] %x5B-5D)
                 / %x80-10FFFF      ; UTF-8 multibyte
-                ; Explicitly excluded: SP %x20, HTAB %x09, ( %x28, ) %x29,
-                ;   [ %x5B, ] %x5D, { %x7B, } %x7D, , %x2C, ~ %x7E, < %x3C, > %x3E
-                ; Note: %x7C (|) is listed for completeness but is the field
-                ; separator and MUST be excluded in any field-value context.
+                ; Explicitly excluded: SP %x20, HTAB %x09, " %x22, ( %x28, ) %x29,
+                ;   , %x2C, [ %x5B, \ %x5C, ] %x5D, { %x7B, | %x7C, } %x7D, ~ %x7E
 
 ; ============================================================================
 ; Quoted Strings
